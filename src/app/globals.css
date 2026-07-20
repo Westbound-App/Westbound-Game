@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+:root {
+  /* Cinematic American road-trip palette */
+  --color-navy: #0b1220;
+  --color-navy-deep: #070b14;
+  --color-cream: #f4efe6;
+  --color-tan: #c4a574;
+  --color-rust: #b54a32;
+  --color-asphalt: #3a3f47;
+  --color-forest: #3d5c4a;
+  --color-gold: #d4a24c;
+  --color-map-bg: #121a28;
+
+  --background: var(--color-navy-deep);
+  --foreground: var(--color-cream);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  min-height: 100%;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-gold) 40%, transparent);
+  color: var(--color-cream);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+/* Walker stage + map character animations */
+@keyframes wb-stage-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes wb-leg-l {
+  0%,
+  100% {
+    transform: rotate(-18deg);
+  }
+  50% {
+    transform: rotate(18deg);
+  }
+}
+@keyframes wb-leg-r {
+  0%,
+  100% {
+    transform: rotate(18deg);
+  }
+  50% {
+    transform: rotate(-18deg);
+  }
+}
+@keyframes wb-road {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 56px 0;
+  }
+}
+
+.wb-stage-bob {
+  animation: wb-stage-bob 0.5s ease-in-out infinite;
+}
+.wb-leg-stage-l {
+  transform-origin: 36px 62px;
+  animation: wb-leg-l 0.5s ease-in-out infinite;
+}
+.wb-leg-stage-r {
+  transform-origin: 44px 62px;
+  animation: wb-leg-r 0.5s ease-in-out infinite;
+}
+.wb-road-scroll {
+  animation: wb-road 0.6s linear infinite;
+}
+.wb-arm-swing {
+  transform-origin: center top;
+}
+
+@keyframes wb-kenburns {
+  from {
+    transform: scale(1.05) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.14) translate3d(-1.5%, -1%, 0);
+  }
+}
+
