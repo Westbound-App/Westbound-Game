@@ -42,7 +42,11 @@ export function resolvePlace(coord: Coordinate): ResolvedPlace {
       sceneImage: bestLandmark.sceneImage ?? DEFAULT_SCENE.sceneImage,
       sceneVideo: bestLandmark.sceneVideo ?? null,
       landmark: bestLandmark,
-      locationLine: `${bestLandmark.headline}${state !== "United States" ? ` · ${state}` : ""}`,
+      locationLine: `${bestLandmark.headline}${
+        state !== "United States" && !bestLandmark.headline.includes(state)
+          ? ` · ${state}`
+          : ""
+      }`,
       matchReason: "landmark",
     };
   }
