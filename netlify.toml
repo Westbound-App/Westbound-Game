@@ -1,0 +1,9 @@
+# Netlify build settings for the WESTBOUND Next.js app.
+# Connect this repo once in the Netlify UI (Add new project → Import from
+# GitHub); Netlify auto-detects Next.js and deploys on every push.
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
