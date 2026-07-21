@@ -16,6 +16,14 @@ import {
   timeOfDayFromHour,
   type TimeOfDayId,
 } from "@/lib/scene/presets";
+import {
+  makeParamReader,
+  readReducedMotion,
+  serverFalse,
+  serverNull,
+  staticSubscribe,
+  subscribeReducedMotion,
+} from "@/lib/client/prefs";
 
 const LivingScene = dynamic(
   () => import("@/components/scene/LivingScene").then((m) => m.LivingScene),
@@ -47,28 +55,8 @@ function SceneLoading() {
   );
 }
 
-/** External stores: media query + URL params (static per page load). */
-function subscribeReducedMotion(onChange: () => void): () => void {
-  const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-  media.addEventListener("change", onChange);
-  return () => media.removeEventListener("change", onChange);
-}
-
-function readReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-const staticSubscribe = () => () => {};
-
-function readTodOverride(): TimeOfDayId | null {
-  const v = new URLSearchParams(window.location.search).get("tod");
-  return v && TOD_VALUES.includes(v as TimeOfDayId) ? (v as TimeOfDayId) : null;
-}
-
-function readBiomeOverride(): SceneBiome | null {
-  const v = new URLSearchParams(window.location.search).get("biome");
-  return v && BIOME_VALUES.includes(v as SceneBiome) ? (v as SceneBiome) : null;
-}
+const readTod = makeParamReader("tod");
+const readBiome = makeParamReader("biome");
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -102,18 +90,18 @@ export function SceneClient() {
   const reduceMotion = useSyncExternalStore(
     subscribeReducedMotion,
     readReducedMotion,
-    () => false,
+    serverFalse,
   );
-  const todOverride = useSyncExternalStore(
-    staticSubscribe,
-    readTodOverride,
-    () => null,
-  );
-  const biomeOverride = useSyncExternalStore(
-    staticSubscribe,
-    readBiomeOverride,
-    () => null,
-  );
+  const todParam = useSyncExternalStore(staticSubscribe, readTod, serverNull);
+  const biomeParam = useSyncExternalStore(staticSubscribe, readBiome, serverNull);
+  const todOverride =
+    todParam && TOD_VALUES.includes(todParam as TimeOfDayId)
+      ? (todParam as TimeOfDayId)
+      : null;
+  const biomeOverride =
+    biomeParam && BIOME_VALUES.includes(biomeParam as SceneBiome)
+      ? (biomeParam as SceneBiome)
+      : null;
 
   const fetchLive = useCallback(async () => {
     try {
