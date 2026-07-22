@@ -39,6 +39,12 @@ export type LiveGamePayload = {
   player: PlayerPublicView | null;
   /** Real (or gracefully simulated) weather at the walker's location */
   weather?: import("@/lib/weather/provider").WeatherSnapshot | null;
+  /** Canonical daily distance (absent on stores that predate it) */
+  daily?: {
+    dayNumber: number;
+    milesToday: number;
+    yesterdayMiles: number | null;
+  } | null;
   error: string | null;
 };
 

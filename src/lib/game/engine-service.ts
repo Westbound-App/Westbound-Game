@@ -17,7 +17,9 @@ import {
 import {
   dayAnchorShiftForStart,
   restResumeAnchorMs,
+  wallToGameMs,
 } from "@/lib/game/schedule";
+import { advanceDailyLog, dayIndexFor } from "@/lib/game/daily";
 import { haversineMeters } from "@/lib/routing/mock-provider";
 import {
   ensureLocalState,
@@ -374,18 +376,20 @@ export async function runLocalTick(nowMs: number = Date.now()): Promise<{
     }
   }
 
+  // Walking window opens at the walker's local start hour (vision §7)
+  const dayShiftMs = dayAnchorShiftForStart(
+    state.game.startedAt ?? nowIso,
+    config.gameTimezone,
+    config.walkingStartLocalHour,
+  );
+
   const result = tickWalker({
     nowMs,
     walker: state.walker,
     game: toEngineGameMeta(state),
     segments: state.segments,
     config,
-    // Walking window opens at the walker's local start hour (vision §7)
-    dayAnchorShiftMs: dayAnchorShiftForStart(
-      state.game.startedAt ?? nowIso,
-      config.gameTimezone,
-      config.walkingStartLocalHour,
-    ),
+    dayAnchorShiftMs: dayShiftMs,
   });
 
   const metersAdvanced = result.metersAdvanced;
@@ -407,6 +411,29 @@ export async function runLocalTick(nowMs: number = Date.now()): Promise<{
         occurredAt: nowIso,
       });
     }
+  }
+
+  // Canonical daily distance (vision Phase 2): fold this tick's movement
+  // into the schedule-day log and journal the rollover mornings.
+  const startedAtMs = Date.parse(state.game.startedAt ?? nowIso);
+  const gameMult =
+    state.game.environment === "sandbox" ? config.sandboxSpeedMultiplier : 1;
+  const gameNowMs = wallToGameMs(Math.max(0, nowMs - startedAtMs), gameMult);
+  const dailyAdvance = advanceDailyLog(
+    state.daily,
+    dayIndexFor(gameNowMs, dayShiftMs),
+    metersAdvanced,
+  );
+  state.daily = dailyAdvance.daily;
+  if (dailyAdvance.rolledOver) {
+    pushEvent(state, {
+      eventType: "day_begins",
+      title: `Day ${state.daily.dayIndex + 1} on the road`,
+      description: `${(dailyAdvance.yesterdayMeters / 1609.344).toFixed(1)} miles yesterday · ${(state.walker.totalDistanceWalkedMeters / 1609.344).toFixed(1)} so far.`,
+      latitude: state.walker.latitude,
+      longitude: state.walker.longitude,
+      occurredAt: nowIso,
+    });
   }
 
   // Open new window if we hit a decision trigger (and none active)
@@ -462,6 +489,15 @@ export async function loadLiveFromLocalEngine(
     controlWindow: controlPublicView(state, nowMs),
     factionStats: state.factionStats,
     player,
+    daily: {
+      dayNumber: state.daily.dayIndex + 1,
+      milesToday: state.daily.metersToday / 1609.344,
+      yesterdayMiles:
+        state.daily.history[0] &&
+        state.daily.history[0].dayIndex === state.daily.dayIndex - 1
+          ? state.daily.history[0].meters / 1609.344
+          : null,
+    },
     error: null,
   };
 }

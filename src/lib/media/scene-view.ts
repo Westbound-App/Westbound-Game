@@ -200,7 +200,10 @@ export function deriveSceneView(
   return {
     localTimeLabel: clock.label,
     weatherLine: weather.line,
-    todayMiles: mockTodayMiles(milesWalked, clock.hour, milesPerDay),
+    // Canonical daily distance when the engine provides it; mock otherwise
+    todayMiles:
+      live.daily?.milesToday ??
+      mockTodayMiles(milesWalked, clock.hour, milesPerDay),
     media,
     fallbackImage,
     grade,
@@ -208,7 +211,7 @@ export function deriveSceneView(
     locationLine: place.locationLine,
     moodLine: atmosphere.moodLine,
     status: statusLabel(live.walker.status),
-    day: dayNumber(live.game.startedAt, nowMs),
+    day: live.daily?.dayNumber ?? dayNumber(live.game.startedAt, nowMs),
     milesWalked,
     milesRemaining,
     progress:
