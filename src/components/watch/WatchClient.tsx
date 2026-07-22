@@ -27,6 +27,9 @@ import {
   useSceneLayers,
 } from "@/components/watch/MediaLayer";
 import { DecisionPanel } from "@/components/watch/DecisionPanel";
+import { InfluencePanel } from "@/components/watch/InfluencePanel";
+import { MapSheet } from "@/components/watch/MapSheet";
+import { MomentsDrawer } from "@/components/watch/MomentsDrawer";
 
 const TOD_VALUES: TimeOfDayId[] = ["day", "golden_hour", "dusk", "night"];
 const SEASON_VALUES: SeasonId[] = ["spring", "summer", "fall", "winter"];
@@ -75,6 +78,9 @@ export function WatchClient() {
   const [live, setLive] = useState<LiveGamePayload | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [clockTick, setClockTick] = useState(0);
+  const [sheet, setSheet] = useState<"influence" | "map" | "moments" | null>(
+    null,
+  );
 
   const reduceMotion = useSyncExternalStore(
     subscribeReducedMotion,
@@ -129,6 +135,26 @@ export function WatchClient() {
       clearInterval(clock);
     };
   }, [fetchLive, playerId]);
+
+  const giftRest = useCallback(async (): Promise<string | null> => {
+    if (!playerId) return "No player session yet — try again";
+    try {
+      const res = await fetch("/api/actions/rest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerId,
+          idempotencyKey: newIdempotencyKey("rest", playerId),
+        }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string };
+      if (!data.ok) return data.error ?? "Could not gift a rest";
+      void fetchLive();
+      return null;
+    } catch {
+      return "Network error — nothing was charged";
+    }
+  }, [playerId, fetchLive]);
 
   const windowId = live?.controlWindow?.id ?? null;
   const contribute = useCallback(
@@ -220,6 +246,9 @@ export function WatchClient() {
               <p className="text-[11px] uppercase tracking-widest text-white/60">
                 {view.status}
               </p>
+              <p className="mt-0.5 text-[11px] text-white/60">
+                {view.localTimeLabel} local · {view.weatherLine}
+              </p>
             </div>
           ) : null}
         </div>
@@ -235,7 +264,8 @@ export function WatchClient() {
                 <span className="text-white/60"> · with {view.dogName}</span>
               </p>
               <p className="text-xs text-white/75 sm:text-sm">
-                {view.milesWalked.toFixed(1)} mi walked ·{" "}
+                {view.todayMiles.toFixed(1)} mi today ·{" "}
+                {view.milesWalked.toFixed(1)} total ·{" "}
                 {view.milesRemaining.toFixed(1)} to the Pacific
               </p>
             </div>
@@ -245,9 +275,53 @@ export function WatchClient() {
                 style={{ width: `${Math.min(100, view.progress * 100)}%` }}
               />
             </div>
-            <p className="text-xs italic text-white/55">{view.moodLine}</p>
+            <div className="flex items-end justify-between gap-3">
+              <p className="text-xs italic text-white/55">{view.moodLine}</p>
+              <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+                <button
+                  onClick={() => setSheet("influence")}
+                  className="rounded-full border border-amber-300/40 bg-black/40 px-3 py-1.5 text-xs font-medium text-amber-200 backdrop-blur-sm transition hover:bg-amber-400/15"
+                >
+                  Influence the Journey
+                </button>
+                <button
+                  onClick={() => setSheet("map")}
+                  className="rounded-full border border-white/20 bg-black/40 px-3 py-1.5 text-xs text-white/80 backdrop-blur-sm transition hover:bg-white/10"
+                >
+                  Map
+                </button>
+                <button
+                  onClick={() => setSheet("moments")}
+                  className="rounded-full border border-white/20 bg-black/40 px-3 py-1.5 text-xs text-white/80 backdrop-blur-sm transition hover:bg-white/10"
+                >
+                  Moments
+                </button>
+              </div>
+            </div>
           </div>
         </div>
+      ) : null}
+
+      {live ? (
+        <>
+          <InfluencePanel
+            open={sheet === "influence"}
+            onClose={() => setSheet(null)}
+            window={live.controlWindow ?? null}
+            player={live.player ?? null}
+            onGiftRest={giftRest}
+          />
+          <MapSheet
+            open={sheet === "map"}
+            onClose={() => setSheet(null)}
+            live={live}
+          />
+          <MomentsDrawer
+            open={sheet === "moments"}
+            onClose={() => setSheet(null)}
+            events={live.events ?? []}
+          />
+        </>
       ) : null}
 
       <DecisionPanel
