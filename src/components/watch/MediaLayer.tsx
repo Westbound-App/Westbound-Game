@@ -1,8 +1,88 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SceneGrade } from "@/lib/media/scene-view";
 import type { SceneMediaEntry } from "@/lib/media/manifest";
+
+/** Seconds of overlap when a loop hands off to its twin. */
+const LOOP_FADE_S = 0.6;
+
+/**
+ * Seamless looping video: two players of the same clip alternate, the next
+ * one fading in just before the current one ends, so AI-generated clips
+ * never visibly "pop" at the loop point. Reduced motion (or metadata
+ * failure) falls back to the browser's native hard loop.
+ */
+function LoopingVideo({
+  src,
+  filter,
+  simple,
+  onFailed,
+}: {
+  src: string;
+  filter?: string;
+  simple: boolean;
+  onFailed: () => void;
+}) {
+  const refA = useRef<HTMLVideoElement>(null);
+  const refB = useRef<HTMLVideoElement>(null);
+  const [active, setActive] = useState<0 | 1>(0);
+
+  useEffect(() => {
+    if (simple) return;
+    const current = active === 0 ? refA.current : refB.current;
+    const next = active === 0 ? refB.current : refA.current;
+    if (!current || !next) return;
+
+    const onTime = () => {
+      if (!current.duration || Number.isNaN(current.duration)) return;
+      if (current.duration - current.currentTime <= LOOP_FADE_S) {
+        next.currentTime = 0;
+        void next.play().catch(() => undefined);
+        setActive((a) => (a === 0 ? 1 : 0));
+      }
+    };
+    current.addEventListener("timeupdate", onTime);
+    return () => current.removeEventListener("timeupdate", onTime);
+  }, [active, simple]);
+
+  if (simple) {
+    return (
+      <video
+        className="h-full w-full object-cover"
+        style={filter ? { filter } : undefined}
+        src={src}
+        autoPlay
+        muted
+        loop
+        playsInline
+        onError={onFailed}
+      />
+    );
+  }
+
+  return (
+    <div className="relative h-full w-full">
+      {[refA, refB].map((ref, i) => (
+        <video
+          key={i}
+          ref={ref}
+          className="absolute inset-0 h-full w-full object-cover transition-opacity duration-500"
+          style={{
+            ...(filter ? { filter } : {}),
+            opacity: active === i ? 1 : 0,
+          }}
+          src={src}
+          autoPlay={i === 0}
+          muted
+          playsInline
+          preload="auto"
+          onError={i === 0 ? onFailed : undefined}
+        />
+      ))}
+    </div>
+  );
+}
 
 /** Keyframes shared by every surface that renders scene media. */
 export const SCENE_STYLE = `
@@ -86,15 +166,11 @@ export function MediaLayer({
   return (
     <div className={`absolute inset-0 ${reduceMotion ? "" : "wb-fadein"}`}>
       {showVideo ? (
-        <video
-          className="h-full w-full object-cover"
-          style={filter ? { filter } : undefined}
+        <LoopingVideo
           src={entry.url}
-          autoPlay
-          muted
-          loop
-          playsInline
-          onError={() => setVideoFailed(true)}
+          filter={filter}
+          simple={reduceMotion}
+          onFailed={() => setVideoFailed(true)}
         />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
