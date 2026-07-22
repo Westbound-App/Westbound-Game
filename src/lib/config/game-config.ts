@@ -31,6 +31,8 @@ export type GameConfig = {
   normalWalkingSpeedMph: number;
   walkingHoursPerDay: number;
   restingHoursPerDay: number;
+  /** Walker-local hour the walking day begins (vision §7 daily routine) */
+  walkingStartLocalHour: number;
   estimatedMilesPerDay: number;
   stateBroadcastIntervalSeconds: number;
   decisionWindowDurationSeconds: number;
@@ -91,6 +93,7 @@ export const defaultGameConfig: GameConfig = {
   // with natural nightly rest. Paid rest breaks add extra pauses on top.
   walkingHoursPerDay: 14,
   restingHoursPerDay: 10,
+  walkingStartLocalHour: 6,
   estimatedMilesPerDay: 35,
   stateBroadcastIntervalSeconds: 5,
   decisionWindowDurationSeconds: 45,

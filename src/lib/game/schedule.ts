@@ -12,8 +12,10 @@ const MS_PER_DAY = 24 * MS_PER_HOUR;
 export function isWalkingAtSimpleSchedule(
   gameClockMs: number,
   config: Pick<GameConfig, "walkingHoursPerDay">,
+  dayAnchorShiftMs = 0,
 ): boolean {
-  const hourOfDay = ((gameClockMs % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY;
+  const shifted = gameClockMs + dayAnchorShiftMs;
+  const hourOfDay = ((shifted % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY;
   const walkingWindowMs = config.walkingHoursPerDay * MS_PER_HOUR;
   return hourOfDay < walkingWindowMs;
 }
@@ -26,6 +28,7 @@ export function walkingMillisecondsBetween(
   fromMs: number,
   toMs: number,
   config: Pick<GameConfig, "walkingHoursPerDay" | "restingHoursPerDay">,
+  dayAnchorShiftMs = 0,
 ): number {
   if (toMs <= fromMs) return 0;
 
@@ -33,15 +36,16 @@ export function walkingMillisecondsBetween(
   const dayMs = MS_PER_DAY;
 
   let total = 0;
-  let cursor = fromMs;
+  let cursor = fromMs + dayAnchorShiftMs;
+  const shiftedEnd = toMs + dayAnchorShiftMs;
 
-  while (cursor < toMs) {
+  while (cursor < shiftedEnd) {
     const offsetInDay = ((cursor % dayMs) + dayMs) % dayMs;
     const dayStart = cursor - offsetInDay;
 
     if (offsetInDay < walkingMsPerDay) {
       const walkEnd = dayStart + walkingMsPerDay;
-      const segmentEnd = Math.min(toMs, walkEnd);
+      const segmentEnd = Math.min(shiftedEnd, walkEnd);
       total += segmentEnd - cursor;
       cursor = segmentEnd;
     } else {
@@ -50,6 +54,42 @@ export function walkingMillisecondsBetween(
   }
 
   return total;
+}
+
+/**
+ * Day-cycle shift that opens the walking window at `startLocalHour` in the
+ * walker's timezone: milliseconds already elapsed in the walker-local day
+ * at journey start, minus the window's start hour. Pass the result as
+ * `dayAnchorShiftMs` so "hour 0" of the schedule cycle = local start hour.
+ */
+export function dayAnchorShiftForStart(
+  startedAtIso: string,
+  timeZone: string,
+  startLocalHour: number,
+): number {
+  const started = new Date(Date.parse(startedAtIso));
+  let hour = started.getHours();
+  let minute = started.getMinutes();
+  try {
+    hour =
+      Number(
+        new Intl.DateTimeFormat("en-US", {
+          hour: "2-digit",
+          hour12: false,
+          timeZone,
+        }).format(started),
+      ) % 24;
+    minute = Number(
+      new Intl.DateTimeFormat("en-US", { minute: "numeric", timeZone }).format(
+        started,
+      ),
+    );
+  } catch {
+    // Unknown zone — fall back to server-local clock
+  }
+  return (
+    hour * MS_PER_HOUR + minute * 60_000 - startLocalHour * MS_PER_HOUR
+  );
 }
 
 /**

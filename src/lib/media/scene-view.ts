@@ -189,7 +189,9 @@ export function deriveSceneView(
   const dayOfYear = Math.floor(
     (nowMs - Date.UTC(now.getUTCFullYear(), 0, 0)) / MS_PER_DAY,
   );
-  const weather = mockWeather(season, timeOfDay, coord.latitude, dayOfYear);
+  // Prefer the server-attached real weather; mock only when absent
+  const weather =
+    live.weather ?? mockWeather(season, timeOfDay, coord.latitude, dayOfYear);
   const milesPerDay =
     typeof live.game.config?.estimatedMilesPerDay === "number"
       ? live.game.config.estimatedMilesPerDay

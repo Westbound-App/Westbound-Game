@@ -70,7 +70,15 @@ export async function GET() {
             ? { name: place.landmark.name, headline: place.landmark.headline }
             : null,
           winterPrecipitationLikely: atmosphere.winterPrecipitationLikely,
-          isSimulated: true,
+          weather: live.weather
+            ? {
+                type: live.weather.weatherType,
+                tempF: live.weather.tempF,
+                line: live.weather.line,
+                isSimulated: live.weather.isSimulated,
+              }
+            : null,
+          isSimulated: live.weather ? live.weather.isSimulated : true,
         },
         controlWindow: live.controlWindow
           ? {
