@@ -37,6 +37,8 @@ export type LiveGamePayload = {
     drifter: FactionTotals;
   };
   player: PlayerPublicView | null;
+  /** Real (or gracefully simulated) weather at the walker's location */
+  weather?: import("@/lib/weather/provider").WeatherSnapshot | null;
   error: string | null;
 };
 
@@ -152,6 +154,55 @@ function mapEvent(row: GameEventRow) {
 }
 
 export async function loadLiveGameState(
+  playerId?: string | null,
+): Promise<LiveGamePayload> {
+  const live = await loadLiveCore(playerId);
+  return attachWeather(live);
+}
+
+/**
+ * Attach the real (or gracefully simulated) weather snapshot for the
+ * walker's location. Never fails the payload over weather.
+ */
+async function attachWeather(live: LiveGamePayload): Promise<LiveGamePayload> {
+  try {
+    const { getWeather } = await import("@/lib/weather/provider");
+    const { resolveAtmosphere } = await import("@/lib/atmosphere/season");
+    const { timeOfDayFromHour } = await import("@/lib/scene/presets");
+    const now = new Date();
+    const timeZone =
+      typeof live.game.config?.gameTimezone === "string"
+        ? (live.game.config.gameTimezone as string)
+        : "America/New_York";
+    let hour = now.getHours();
+    try {
+      hour =
+        Number(
+          new Intl.DateTimeFormat("en-US", {
+            hour: "2-digit",
+            hour12: false,
+            timeZone,
+          }).format(now),
+        ) % 24;
+    } catch {
+      // keep server-local hour
+    }
+    const weather = await getWeather({
+      latitude: live.walker.latitude,
+      longitude: live.walker.longitude,
+      season: resolveAtmosphere(live.walker.latitude, now).season,
+      timeOfDay: timeOfDayFromHour(hour),
+      dayOfYear: Math.floor(
+        (now.getTime() - Date.UTC(now.getUTCFullYear(), 0, 0)) / 86_400_000,
+      ),
+    });
+    return { ...live, weather };
+  } catch {
+    return live;
+  }
+}
+
+async function loadLiveCore(
   playerId?: string | null,
 ): Promise<LiveGamePayload> {
   if (!isSupabaseConfigured()) {

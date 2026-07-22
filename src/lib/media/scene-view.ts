@@ -17,8 +17,51 @@ import {
 } from "@/lib/media/manifest";
 import type { SceneBiome } from "@/lib/places/types";
 import { timeOfDayFromHour, type TimeOfDayId } from "@/lib/scene/presets";
+import { mockTodayMiles, mockWeather } from "@/lib/presentation/mock-adapters";
 
 const METERS_PER_MILE = 1609.344;
+const MS_PER_DAY = 24 * 3_600_000;
+
+/**
+ * The feed reflects the WALKER's local clock, not the viewer's
+ * (LIVE_JOURNEY_VISION §7). Falls back to viewer time on bad zones.
+ */
+function zonedClock(
+  now: Date,
+  timeZone: string,
+): { hour: number; label: string } {
+  try {
+    const h24 =
+      Number(
+        new Intl.DateTimeFormat("en-US", {
+          hour: "2-digit",
+          hour12: false,
+          timeZone,
+        }).format(now),
+      ) % 24;
+    const minute = Number(
+      new Intl.DateTimeFormat("en-US", { minute: "numeric", timeZone }).format(
+        now,
+      ),
+    );
+    const label = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone,
+    }).format(now);
+    return { hour: h24 + minute / 60, label };
+  } catch {
+    return {
+      hour: now.getHours() + now.getMinutes() / 60,
+      label: new Intl.DateTimeFormat("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }).format(now),
+    };
+  }
+}
 
 /**
  * Statuses where the pair is not actively traveling — these show resting /
@@ -53,6 +96,12 @@ export type SceneView = {
   progress: number;
   dogName: string;
   walkerName: string;
+  /** Walker-local clock label, e.g. "7:42 PM" */
+  localTimeLabel: string;
+  /** Gentle mock weather line, e.g. "68°F · fair skies" */
+  weatherLine: string;
+  /** Mocked distance-so-far-today (Phase 2: canonical tracking) */
+  todayMiles: number;
 };
 
 export function statusLabel(status: string): string {
@@ -93,11 +142,15 @@ export function deriveSceneView(
   };
   const place = resolveLocationPresentation(coord);
   const atmosphere = resolveAtmosphere(coord.latitude, now);
-  const hour = now.getHours() + now.getMinutes() / 60;
+  const timeZone =
+    typeof live.game.config?.gameTimezone === "string"
+      ? live.game.config.gameTimezone
+      : "America/New_York";
+  const clock = zonedClock(now, timeZone);
 
   const biome = overrides.biome ?? place.biome;
   const season = overrides.season ?? atmosphere.season;
-  const timeOfDay = overrides.timeOfDay ?? timeOfDayFromHour(hour);
+  const timeOfDay = overrides.timeOfDay ?? timeOfDayFromHour(clock.hour);
 
   // He never stops walking by design — night included. Rest scenes appear
   // only for genuine rest states (paid breaks, votes, weather holds).
@@ -133,7 +186,21 @@ export function deriveSceneView(
     live.walker.projectedRemainingMeters / METERS_PER_MILE,
   );
 
+  const dayOfYear = Math.floor(
+    (nowMs - Date.UTC(now.getUTCFullYear(), 0, 0)) / MS_PER_DAY,
+  );
+  // Prefer the server-attached real weather; mock only when absent
+  const weather =
+    live.weather ?? mockWeather(season, timeOfDay, coord.latitude, dayOfYear);
+  const milesPerDay =
+    typeof live.game.config?.estimatedMilesPerDay === "number"
+      ? live.game.config.estimatedMilesPerDay
+      : 35;
+
   return {
+    localTimeLabel: clock.label,
+    weatherLine: weather.line,
+    todayMiles: mockTodayMiles(milesWalked, clock.hour, milesPerDay),
     media,
     fallbackImage,
     grade,

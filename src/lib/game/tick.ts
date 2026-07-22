@@ -56,6 +56,13 @@ export type TickInput = {
   game: EngineGameMeta;
   segments: RouteSegment[];
   config: GameConfig;
+  /**
+   * Shifts the schedule's day cycle so the walking window opens at the
+   * walker's LOCAL configured start hour (vision §7). Computed from the
+   * journey start time in the game's timezone; 0 keeps the legacy
+   * start-at-epoch cycle.
+   */
+  dayAnchorShiftMs?: number;
 };
 
 export type TickEvent = {
@@ -154,7 +161,11 @@ export function tickWalker(input: TickInput): TickResult {
     mult,
   );
 
-  const shouldWalk = isWalkingAtSimpleSchedule(gameNowElapsedMs, config);
+  const shouldWalk = isWalkingAtSimpleSchedule(
+    gameNowElapsedMs,
+    config,
+    input.dayAnchorShiftMs ?? 0,
+  );
 
   if (!shouldWalk) {
     if (walker.status !== "resting") {
@@ -233,6 +244,7 @@ export function tickWalker(input: TickInput): TickResult {
     gameAnchorElapsedMs,
     gameNowElapsedMs,
     config,
+    input.dayAnchorShiftMs ?? 0,
   );
   // walkingGameMs is game-time ms spent walking. Distance uses base human speed
   // against that game-time (sandbox compression already applied via game clock).

@@ -14,7 +14,10 @@ import {
   rebuildThroughWaypoint,
   remainingCoordinatesFromProgress,
 } from "@/lib/game/detour";
-import { restResumeAnchorMs } from "@/lib/game/schedule";
+import {
+  dayAnchorShiftForStart,
+  restResumeAnchorMs,
+} from "@/lib/game/schedule";
 import { haversineMeters } from "@/lib/routing/mock-provider";
 import {
   ensureLocalState,
@@ -377,6 +380,12 @@ export async function runLocalTick(nowMs: number = Date.now()): Promise<{
     game: toEngineGameMeta(state),
     segments: state.segments,
     config,
+    // Walking window opens at the walker's local start hour (vision §7)
+    dayAnchorShiftMs: dayAnchorShiftForStart(
+      state.game.startedAt ?? nowIso,
+      config.gameTimezone,
+      config.walkingStartLocalHour,
+    ),
   });
 
   const metersAdvanced = result.metersAdvanced;
