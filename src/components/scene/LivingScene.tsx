@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
+import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { BackSide, Color, ShaderMaterial, Vector3 } from "three";
 import type { Group } from "three";
 import type { SceneBiome } from "@/lib/places/types";
@@ -32,6 +33,8 @@ export type LivingSceneProps = {
   /** Authoritative speed; the scene clamps to a pleasant visual range */
   speedMps: number;
   walking: boolean;
+  /** True during paid rests / holds — Beacon sits, the pair settles */
+  resting?: boolean;
   /** Total journey meters at page load — seeds the world so it never loops */
   journeyMeters: number;
   reduceMotion: boolean;
@@ -185,6 +188,7 @@ export function LivingScene({
   season,
   speedMps,
   walking,
+  resting = false,
   journeyMeters,
   reduceMotion,
 }: LivingSceneProps) {
@@ -260,11 +264,16 @@ export function LivingScene({
           Offset to the right lane — nobody walks the center line. */}
       <group position={[1.7, 0, 0]}>
         <Walker3D phaseRef={offsetRef} strideRef={strideRef} />
-        <Beacon3D phaseRef={offsetRef} strideRef={strideRef} />
+        <Beacon3D phaseRef={offsetRef} strideRef={strideRef} resting={resting} />
       </group>
 
       <CameraRig reduceMotion={reduceMotion} />
       <Advance offsetRef={offsetRef} strideRef={strideRef} targetSpeed={targetSpeed} />
+
+      <EffectComposer>
+        <Bloom intensity={0.45} luminanceThreshold={0.78} mipmapBlur />
+        <Vignette eskil={false} offset={0.22} darkness={0.55} />
+      </EffectComposer>
     </Canvas>
   );
 }

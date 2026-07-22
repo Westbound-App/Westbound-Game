@@ -99,12 +99,11 @@ export function deriveSceneView(
   const season = overrides.season ?? atmosphere.season;
   const timeOfDay = overrides.timeOfDay ?? timeOfDayFromHour(hour);
 
-  // After dark the pair is resting on screen no matter how fast the sandbox
-  // engine walks — the world must never show night-walking.
-  const context =
-    timeOfDay === "night" || RESTING_STATUSES.has(live.walker.status)
-      ? ("resting" as const)
-      : ("walking" as const);
+  // He never stops walking by design — night included. Rest scenes appear
+  // only for genuine rest states (paid breaks, votes, weather holds).
+  const context = RESTING_STATUSES.has(live.walker.status)
+    ? ("resting" as const)
+    : ("walking" as const);
 
   const query = {
     biome,

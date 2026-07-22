@@ -17,6 +17,8 @@ type BeaconMode = "beside" | "ahead" | "sniffing" | "looking_back";
 type Props = {
   phaseRef: React.MutableRefObject<number>;
   strideRef: React.MutableRefObject<number>;
+  /** Paid rest / hold: Beacon settles into a sit beside the walker */
+  resting?: boolean;
 };
 
 /**
@@ -24,7 +26,7 @@ type Props = {
  * snout blaze, subtle tan brows. He drifts between natural positions —
  * beside the walker, trotting ahead, pausing to sniff, looking back.
  */
-export function Beacon3D({ phaseRef, strideRef }: Props) {
+export function Beacon3D({ phaseRef, strideRef, resting = false }: Props) {
   const root = useRef<Group>(null);
   const body = useRef<Group>(null);
   const head = useRef<Group>(null);
@@ -48,18 +50,21 @@ export function Beacon3D({ phaseRef, strideRef }: Props) {
   useFrame(({ clock }, dt) => {
     const t = clock.elapsedTime;
     const stride = strideRef.current;
+    const k = Math.min(1, dt * 4);
+    // Paid rest: settle into a sit beside the walker, watching him
+    const sitting = resting && stride < 0.25;
 
-    // Rotate through behaviors on a gentle schedule (resting → stay beside).
+    // Rotate through behaviors on a gentle schedule (idle → stay beside).
     if (t > modeUntil.current) {
       const order: BeaconMode[] = ["beside", "ahead", "looking_back", "beside", "sniffing"];
       const next = order[Math.floor(t / 9) % order.length];
-      mode.current = stride > 0.2 ? next : "beside";
+      mode.current = stride > 0.2 && !sitting ? next : "beside";
       modeUntil.current = t + 7 + (Math.floor(t) % 5);
     }
 
     // Ease toward the current behavior's offset; sniffing = quick dart out,
     // catching up from a sniff = faster trot.
-    const target = targets[stride > 0.2 ? mode.current : "beside"];
+    const target = targets[stride > 0.2 && !sitting ? mode.current : "beside"];
     const ease = mode.current === "sniffing" ? 1.6 : 0.9;
     pos.current.x += (target.x - pos.current.x) * Math.min(1, dt * ease);
     pos.current.z += (target.z - pos.current.z) * Math.min(1, dt * ease);
@@ -69,35 +74,49 @@ export function Beacon3D({ phaseRef, strideRef }: Props) {
     }
 
     // Trot cycle: diagonal pairs, ~2.2× the walker's cadence.
-    const sniffing = mode.current === "sniffing" && stride > 0.2;
+    const sniffing = mode.current === "sniffing" && stride > 0.2 && !sitting;
     const gaitAmp = sniffing ? 0.08 : 0.55 * Math.max(stride, 0.05);
     const g = (phaseRef.current / 1.45) * Math.PI * 2 * 2.2 + 1.3;
     legs.forEach((leg, i) => {
       if (!leg.current) return;
       const pair = i === 0 || i === 3 ? 0 : Math.PI; // FL+RR vs FR+RL
-      leg.current.rotation.x = Math.sin(g + pair) * gaitAmp;
+      // Sitting: front legs planted straight, rear legs folded under
+      const want = sitting
+        ? i < 2
+          ? 0
+          : 1.15
+        : Math.sin(g + pair) * gaitAmp;
+      leg.current.rotation.x += (want - leg.current.rotation.x) * k;
     });
 
     if (body.current) {
-      body.current.position.y =
-        0.42 + Math.abs(Math.sin(g)) * 0.02 * stride + Math.sin(t * 1.7) * 0.004;
-      body.current.rotation.x = sniffing ? 0.12 : 0;
+      const wantY = sitting
+        ? 0.34
+        : 0.42 + Math.abs(Math.sin(g)) * 0.02 * stride + Math.sin(t * 1.7) * 0.004;
+      const wantPitch = sitting ? -0.34 : sniffing ? 0.12 : 0;
+      body.current.position.y += (wantY - body.current.position.y) * k;
+      body.current.rotation.x += (wantPitch - body.current.rotation.x) * k;
     }
     if (head.current) {
-      // Sniffing: nose down. Looking back: turn toward the walker. Else: forward
-      // with small curious tilts.
-      const wantPitch = sniffing ? 0.85 : Math.sin(t * 0.8) * 0.06;
-      const wantYaw =
-        mode.current === "looking_back" && stride > 0.2
+      // Sitting: watch the walker. Sniffing: nose down. Looking back: turn
+      // toward him. Else: forward with small curious tilts.
+      const wantPitch = sitting
+        ? 0.1 + Math.sin(t * 0.7) * 0.04
+        : sniffing
+          ? 0.85
+          : Math.sin(t * 0.8) * 0.06;
+      const wantYaw = sitting
+        ? 0.55
+        : mode.current === "looking_back" && stride > 0.2
           ? 2.4
           : Math.sin(t * 0.55) * 0.12;
       head.current.rotation.x += (wantPitch - head.current.rotation.x) * Math.min(1, dt * 4);
       head.current.rotation.y += (wantYaw - head.current.rotation.y) * Math.min(1, dt * 3);
     }
     if (tail.current) {
-      // Always gently wagging; bigger when trotting ahead or greeting.
-      const wagSpeed = mode.current === "ahead" ? 9 : 5.5;
-      const wagAmp = mode.current === "ahead" ? 0.5 : 0.3;
+      // Always gently wagging; big happy sweeps while sitting with him.
+      const wagSpeed = sitting ? 2.4 : mode.current === "ahead" ? 9 : 5.5;
+      const wagAmp = sitting ? 0.45 : mode.current === "ahead" ? 0.5 : 0.3;
       tail.current.rotation.y = Math.sin(t * wagSpeed) * wagAmp;
     }
   });

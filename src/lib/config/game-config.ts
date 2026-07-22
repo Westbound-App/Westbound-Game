@@ -47,6 +47,13 @@ export type GameConfig = {
     drifter: string;
     neutral: string;
   };
+  /** Paid direct actions — the only ways the walk ever pauses or bends */
+  paidActions: {
+    restBreakCredits: number;
+    restBreakRealMinutes: number;
+    waypointCredits: number;
+    waypointMaxDetourMiles: number;
+  };
   routeProtectionStrength: number;
   loopPrevention: {
     lookbackDistanceMiles: number;
@@ -80,9 +87,11 @@ export const defaultGameConfig: GameConfig = {
       "Mostly black with white chest, paws, and muzzle; a little chunky like a Bernese, with a playful husky face. Walks with him and around him.",
   },
   normalWalkingSpeedMph: 2.5,
-  walkingHoursPerDay: 8,
-  restingHoursPerDay: 16,
-  estimatedMilesPerDay: 20,
+  // Believable daily rhythm (LIVE_JOURNEY_VISION §7): long walking days
+  // with natural nightly rest. Paid rest breaks add extra pauses on top.
+  walkingHoursPerDay: 14,
+  restingHoursPerDay: 10,
+  estimatedMilesPerDay: 35,
   stateBroadcastIntervalSeconds: 5,
   decisionWindowDurationSeconds: 45,
   minimumDecisionSpacingMiles: 0.25,
@@ -97,6 +106,12 @@ export const defaultGameConfig: GameConfig = {
     finisher: "Finishers",
     drifter: "Pathfinders",
     neutral: "Watchers",
+  },
+  paidActions: {
+    restBreakCredits: 200,
+    restBreakRealMinutes: 30,
+    waypointCredits: 500,
+    waypointMaxDetourMiles: 5000,
   },
   routeProtectionStrength: 1.25,
   loopPrevention: {
@@ -155,6 +170,14 @@ export function mergeGameConfig(
       ...(typeof overrides.factionNames === "object" &&
       overrides.factionNames !== null
         ? (overrides.factionNames as GameConfig["factionNames"])
+        : {}),
+    },
+    paidActions: {
+      ...defaultGameConfig.paidActions,
+      ...(typeof (overrides as Partial<GameConfig>).paidActions === "object" &&
+      (overrides as Partial<GameConfig>).paidActions !== null
+        ? ((overrides as Partial<GameConfig>)
+            .paidActions as GameConfig["paidActions"])
         : {}),
     },
     companionDog: {

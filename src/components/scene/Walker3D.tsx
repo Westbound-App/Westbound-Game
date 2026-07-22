@@ -38,27 +38,30 @@ export function Walker3D({ phaseRef, strideRef }: Props) {
   const armR = useRef<Group>(null);
   const torso = useRef<Group>(null);
 
-  useFrame(() => {
+  useFrame(({ clock }) => {
     const stride = strideRef.current;
-    // ~1.45 m stride length → two steps per cycle
+    // ~1.45 m stride length → two steps per cycle; a soft second harmonic
+    // takes the metronome feel out of the gait
     const t = (phaseRef.current / 1.45) * Math.PI * 2;
-    const swing = Math.sin(t) * 0.5 * stride;
-    const idle = Math.sin(t * 0.13) * 0.02;
+    const swing = (Math.sin(t) + 0.09 * Math.sin(2 * t + 0.4)) * 0.52 * stride;
+    const idle = Math.sin(clock.elapsedTime * 0.8) * 0.012;
 
     if (hipL.current) hipL.current.rotation.x = swing;
     if (hipR.current) hipR.current.rotation.x = -swing;
     // Shin trails the thigh: bends most as the leg comes forward
     if (kneeL.current)
-      kneeL.current.rotation.x = Math.max(0, Math.sin(t + 1.25)) * 0.75 * stride;
+      kneeL.current.rotation.x = Math.max(0, Math.sin(t + 1.25)) * 0.7 * stride;
     if (kneeR.current)
       kneeR.current.rotation.x =
-        Math.max(0, Math.sin(t + Math.PI + 1.25)) * 0.75 * stride;
-    if (armL.current) armL.current.rotation.x = -swing * 0.7;
-    if (armR.current) armR.current.rotation.x = swing * 0.7;
+        Math.max(0, Math.sin(t + Math.PI + 1.25)) * 0.7 * stride;
+    if (armL.current) armL.current.rotation.x = -swing * 0.78;
+    if (armR.current) armR.current.rotation.x = swing * 0.78;
     if (torso.current) torso.current.rotation.z = Math.sin(t * 0.5) * 0.02;
     if (root.current) {
+      // Weight shifts side to side; bob stays subtle
+      root.current.rotation.z = Math.sin(t) * 0.016 * stride;
       root.current.position.y =
-        Math.abs(Math.sin(t)) * 0.045 * stride + idle * (1 - stride);
+        Math.abs(Math.sin(t)) * 0.038 * stride + idle * (1 - stride);
     }
   });
 

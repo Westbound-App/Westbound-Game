@@ -86,7 +86,7 @@ describe("resolveSceneMedia", () => {
     assert.equal(genericHit?.id, "generic");
   });
 
-  it("never serves a walking shot while the walker rests", () => {
+  it("prefers canon characters over placeholders even across contexts", () => {
     const hit = resolveSceneMedia(
       {
         biome: "new_england_town",
@@ -96,8 +96,9 @@ describe("resolveSceneMedia", () => {
       },
       entries,
     );
-    // The summer walking video is excluded; biome scenery wins instead
-    assert.equal(hit?.id, "biome-still");
+    // No canon resting scene exists yet: the character-locked walking scene
+    // (right characters) must beat placeholder scenery (wrong characters)
+    assert.equal(hit?.id, "biome-season-video");
   });
 
   it("serves the resting night scene after dark", () => {

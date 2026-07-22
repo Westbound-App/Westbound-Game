@@ -186,6 +186,7 @@ export function SceneClient() {
         season={view.season}
         speedMps={view.speedMps}
         walking={view.walking}
+        resting={!view.walking}
         journeyMeters={view.journeyMeters}
         reduceMotion={reduceMotion}
       />

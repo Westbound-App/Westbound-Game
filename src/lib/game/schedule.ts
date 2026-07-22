@@ -53,6 +53,20 @@ export function walkingMillisecondsBetween(
 }
 
 /**
+ * Where the movement anchor lands when a paid rest ends: never earlier than
+ * the previous anchor, never later than now. Keeps rest time from counting
+ * as walking time without a catch-up jump afterward.
+ */
+export function restResumeAnchorMs(
+  previousAnchorMs: number,
+  nowMs: number,
+  paidRestUntilMs: number | null,
+): number {
+  if (!paidRestUntilMs) return previousAnchorMs;
+  return Math.min(nowMs, Math.max(previousAnchorMs, paidRestUntilMs));
+}
+
+/**
  * Convert wall-clock elapsed ms to game-clock ms when sandbox acceleration applies.
  * Production multiplier should be 1.
  */
