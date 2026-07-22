@@ -34,7 +34,6 @@ function walkerSvgHtml(status: string, heading: number): string {
   const walking =
     status === "walking" || status === "approaching_decision";
   const resting = status === "resting" || status === "completed";
-  const anim = walking ? "wb-walk" : resting ? "wb-idle" : "wb-idle";
   // SVG faces "up" (north); rotate by heading so he faces travel direction
   return `
     <style>

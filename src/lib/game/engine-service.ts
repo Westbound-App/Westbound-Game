@@ -336,7 +336,7 @@ export async function runLocalTick(nowMs: number = Date.now()): Promise<{
     config,
   });
 
-  let metersAdvanced = result.metersAdvanced;
+  const metersAdvanced = result.metersAdvanced;
 
   if (result.dirty) {
     state.walker = result.walker;
@@ -474,7 +474,7 @@ export async function setPlayerFaction(params: {
   playerId: string;
   faction: Faction;
 }): Promise<LocalPlayer> {
-  const state = await ensureLocalState();
+  await ensureLocalState();
   await runLocalTick(); // refresh
   const fresh = await ensureLocalState();
   const player = fresh.players[params.playerId];

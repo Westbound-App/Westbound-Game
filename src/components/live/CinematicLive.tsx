@@ -102,7 +102,8 @@ export function CinematicLive({ initial }: Props) {
   const [feedDown, setFeedDown] = useState(false);
 
   useEffect(() => {
-    setPlayerId(getOrCreatePlayerId());
+    const kickoff = setTimeout(() => setPlayerId(getOrCreatePlayerId()), 0);
+    return () => clearTimeout(kickoff);
   }, []);
 
   const fetchLive = useCallback(async () => {

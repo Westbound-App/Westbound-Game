@@ -1,50 +1,16 @@
-import { CinematicLive } from "@/components/live/CinematicLive";
-import { loadLiveGameState } from "@/lib/game/load-live-state";
-import { getFallbackGameView, getFallbackWalkerSnapshot, getFallbackSegments, getFallbackEvents } from "@/lib/game/sandbox-fallback";
-import type { LiveGamePayload } from "@/lib/game/load-live-state";
+import type { Metadata } from "next";
+import { WatchClient } from "@/components/watch/WatchClient";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
-function emergencyFallback(): LiveGamePayload {
-  return {
-    source: "fallback",
-    game: getFallbackGameView(),
-    walker: getFallbackWalkerSnapshot(),
-    heading: 270,
-    segments: getFallbackSegments(),
-    events: getFallbackEvents(),
-    controlWindow: null,
-    factionStats: {
-      finisher: {
-        creditsSpent: 0,
-        windowsWon: 0,
-        milesAdded: 0,
-        milesPrevented: 0,
-      },
-      drifter: {
-        creditsSpent: 0,
-        windowsWon: 0,
-        milesAdded: 0,
-        milesPrevented: 0,
-      },
-    },
-    player: null,
-    error: null,
-  };
-}
+export const metadata: Metadata = {
+  title: "WESTBOUND — A man and his dog are walking across America",
+  description:
+    "Watch the live journey west. Help keep them on course, or send them on a scenic detour. When they reach the Pacific, it ends forever.",
+};
 
 /**
- * Public live show — always renders a feed on refresh.
- * If state load throws, we still show cinematic UI with safe defaults.
+ * Home — the live journey. The previous dashboard-style page is preserved
+ * at /classic while the new experience settles in.
  */
-export default async function PublicLivePage() {
-  let live: LiveGamePayload;
-  try {
-    live = await loadLiveGameState();
-  } catch {
-    live = emergencyFallback();
-  }
-
-  return <CinematicLive initial={live} />;
+export default function HomePage() {
+  return <WatchClient />;
 }

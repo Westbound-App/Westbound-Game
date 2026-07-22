@@ -12,6 +12,10 @@ type Props = {
 
 const AMOUNTS = [50, 100, 250, 500];
 
+function newIdempotencyKey(...parts: string[]): string {
+  return `${parts.join("-")}-${Date.now()}`;
+}
+
 export function ControlWindowPanel({
   window,
   playerId,
@@ -54,7 +58,7 @@ export function ControlWindowPanel({
             playerId,
             optionId,
             credits: amount,
-            idempotencyKey: `${playerId}-${window.id}-${optionId}-${Date.now()}`,
+            idempotencyKey: newIdempotencyKey(playerId, window.id, optionId),
           }),
         },
       );

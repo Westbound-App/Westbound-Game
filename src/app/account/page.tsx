@@ -38,33 +38,36 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const playerId = localStorage.getItem(PLAYER_KEY);
-    if (!playerId) {
-      setError("No local player yet. Join from the live page first.");
-      setLoading(false);
-      return;
-    }
-
-    void (async () => {
-      try {
-        // Ensure joined
-        await fetch("/api/player/join", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId }),
-        });
-        const res = await fetch(
-          `/api/player/account?playerId=${encodeURIComponent(playerId)}`,
-          { cache: "no-store" },
-        );
-        if (!res.ok) throw new Error("Could not load account");
-        setData((await res.json()) as AccountData);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed");
-      } finally {
+    const kickoff = setTimeout(() => {
+      const playerId = localStorage.getItem(PLAYER_KEY);
+      if (!playerId) {
+        setError("No local player yet. Join from the live page first.");
         setLoading(false);
+        return;
       }
-    })();
+
+      void (async () => {
+        try {
+          // Ensure joined
+          await fetch("/api/player/join", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playerId }),
+          });
+          const res = await fetch(
+            `/api/player/account?playerId=${encodeURIComponent(playerId)}`,
+            { cache: "no-store" },
+          );
+          if (!res.ok) throw new Error("Could not load account");
+          setData((await res.json()) as AccountData);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Failed");
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }, 0);
+    return () => clearTimeout(kickoff);
   }, []);
 
   return (

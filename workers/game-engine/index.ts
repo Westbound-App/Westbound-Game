@@ -29,7 +29,6 @@ async function main(): Promise<void> {
   console.log(`[worker] store: ${getLocalStatePath()}`);
   console.log(`[worker] interval: ${INTERVAL_MS}ms`);
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
       await tickOnce();
