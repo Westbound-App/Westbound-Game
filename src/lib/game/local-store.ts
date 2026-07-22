@@ -4,6 +4,7 @@
  */
 
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   defaultGameConfig,
@@ -66,8 +67,46 @@ export type LocalGameState = {
 };
 
 const SCHEMA_VERSION = 2;
-const DATA_DIR = path.join(process.cwd(), ".data");
-const STATE_FILE = path.join(DATA_DIR, "local-game.json");
+
+/**
+ * Storage resolution: prefer the project .data dir (dev), fall back to the
+ * OS temp dir (serverless hosts mount the project read-only), fall back to
+ * memory only. Persistence is best-effort — the game API must never crash
+ * because a filesystem is read-only.
+ */
+const CANDIDATE_DIRS = [
+  path.join(process.cwd(), ".data"),
+  path.join(os.tmpdir(), "westbound-data"),
+];
+
+let resolvedDir: string | null | undefined;
+let memoryState: LocalGameState | null = null;
+
+/** First candidate directory that can actually be created. Exported for tests. */
+export async function firstWritableDir(
+  candidates: string[],
+): Promise<string | null> {
+  for (const dir of candidates) {
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      return dir;
+    } catch {
+      // Read-only or forbidden — try the next candidate.
+    }
+  }
+  return null;
+}
+
+async function resolveDataDir(): Promise<string | null> {
+  if (resolvedDir !== undefined) return resolvedDir;
+  resolvedDir = await firstWritableDir(CANDIDATE_DIRS);
+  return resolvedDir;
+}
+
+async function stateFilePath(): Promise<string | null> {
+  const dir = await resolveDataDir();
+  return dir ? path.join(dir, "local-game.json") : null;
+}
 
 function emptyFaction(): FactionTotals {
   return {
@@ -194,36 +233,49 @@ function migrateState(raw: LocalGameState): LocalGameState {
 }
 
 export async function ensureLocalState(): Promise<LocalGameState> {
-  try {
-    const raw = await fs.readFile(STATE_FILE, "utf8");
-    const parsed = JSON.parse(raw) as LocalGameState;
-    if (!parsed.walker || !parsed.segments?.length) {
-      throw new Error("Invalid local state");
+  const file = await stateFilePath();
+  if (file) {
+    try {
+      const raw = await fs.readFile(file, "utf8");
+      const parsed = JSON.parse(raw) as LocalGameState;
+      if (!parsed.walker || !parsed.segments?.length) {
+        throw new Error("Invalid local state");
+      }
+      if (
+        parsed.schemaVersion !== SCHEMA_VERSION ||
+        !parsed.players ||
+        !parsed.decisionPoints
+      ) {
+        const migrated = migrateState(parsed);
+        await saveLocalState(migrated);
+        return migrated;
+      }
+      memoryState = parsed;
+      return parsed;
+    } catch {
+      // Missing or corrupt file — fall through to memory / fresh state.
     }
-    if (parsed.schemaVersion !== SCHEMA_VERSION) {
-      const migrated = migrateState(parsed);
-      await saveLocalState(migrated);
-      return migrated;
-    }
-    // Ensure new fields exist even if schemaVersion matched loosely
-    if (!parsed.players || !parsed.decisionPoints) {
-      const migrated = migrateState(parsed);
-      await saveLocalState(migrated);
-      return migrated;
-    }
-    return parsed;
-  } catch {
-    const initial = createInitialState();
-    await saveLocalState(initial);
-    return initial;
   }
+  if (memoryState) return memoryState;
+  const initial = createInitialState();
+  await saveLocalState(initial);
+  return initial;
 }
 
 export async function saveLocalState(state: LocalGameState): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  const tmp = `${STATE_FILE}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
-  await fs.rename(tmp, STATE_FILE);
+  // Memory is the source of truth within a warm process; disk is best-effort
+  // durability for restarts. Never throw from persistence.
+  memoryState = state;
+  const file = await stateFilePath();
+  if (!file) return;
+  try {
+    const tmp = `${file}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+    await fs.rename(tmp, file);
+  } catch {
+    // Read-only filesystem — keep serving from memory.
+    resolvedDir = null;
+  }
 }
 
 export function toEngineGameMeta(state: LocalGameState): EngineGameMeta {
@@ -256,7 +308,9 @@ export async function resetLocalSandbox(opts?: {
 }
 
 export function getLocalStatePath(): string {
-  return STATE_FILE;
+  if (resolvedDir === null) return "(in-memory only — read-only filesystem)";
+  const dir = resolvedDir ?? CANDIDATE_DIRS[0];
+  return path.join(dir, "local-game.json");
 }
 
 export { SANDBOX_GAME_ID };
