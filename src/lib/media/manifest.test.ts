@@ -5,57 +5,58 @@ import {
   type SceneMediaEntry,
 } from "@/lib/media/manifest";
 
-const entries: SceneMediaEntry[] = [
-  {
-    id: "generic",
+function entry(partial: Partial<SceneMediaEntry> & { id: string }): SceneMediaEntry {
+  return {
     kind: "image",
-    url: "/a.jpg",
+    url: `/${partial.id}.jpg`,
     biome: "any",
     season: "any",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: null,
-  },
-  {
-    id: "biome-still",
-    kind: "image",
-    url: "/b.jpg",
-    biome: "new_england_town",
-    season: "any",
-    timeOfDay: "any",
-    landmarkId: null,
-    source: "stock_placeholder",
-    label: null,
-  },
-  {
+    ...partial,
+  };
+}
+
+const entries: SceneMediaEntry[] = [
+  entry({ id: "generic" }),
+  entry({ id: "biome-still", biome: "new_england_town" }),
+  entry({
     id: "biome-season-video",
     kind: "video",
     url: "/c.mp4",
     biome: "new_england_town",
     season: "summer",
-    timeOfDay: "any",
-    landmarkId: null,
+    context: "walking",
     source: "generated_locked",
-    label: null,
-  },
-  {
+  }),
+  entry({
     id: "landmark-derby",
-    kind: "image",
-    url: "/derby.jpg",
     biome: "midwest_industrial",
-    season: "any",
-    timeOfDay: "any",
     landmarkId: "derby-downs",
     source: "generated_locked",
-    label: null,
-  },
+  }),
+  entry({
+    id: "campsite-night",
+    biome: "new_england_town",
+    season: "summer",
+    timeOfDay: "night",
+    context: "resting",
+    source: "generated_locked",
+  }),
 ];
 
 describe("resolveSceneMedia", () => {
   it("prefers the most specific biome+season match", () => {
     const hit = resolveSceneMedia(
-      { biome: "new_england_town", season: "summer", timeOfDay: "day" },
+      {
+        biome: "new_england_town",
+        season: "summer",
+        timeOfDay: "day",
+        context: "walking",
+      },
       entries,
     );
     assert.equal(hit?.id, "biome-season-video");
@@ -63,42 +64,107 @@ describe("resolveSceneMedia", () => {
 
   it("falls back to biome, then generic", () => {
     const biomeHit = resolveSceneMedia(
-      { biome: "new_england_town", season: "winter", timeOfDay: "day" },
+      {
+        biome: "new_england_town",
+        season: "winter",
+        timeOfDay: "day",
+        context: "walking",
+      },
       entries,
     );
     assert.equal(biomeHit?.id, "biome-still");
 
     const genericHit = resolveSceneMedia(
-      { biome: "great_plains", season: "winter", timeOfDay: "night" },
+      {
+        biome: "great_plains",
+        season: "winter",
+        timeOfDay: "night",
+        context: "walking",
+      },
       entries,
     );
     assert.equal(genericHit?.id, "generic");
   });
 
-  it("landmark entries win when the walker is at the landmark", () => {
+  it("never serves a walking shot while the walker rests", () => {
     const hit = resolveSceneMedia(
+      {
+        biome: "new_england_town",
+        season: "summer",
+        timeOfDay: "day",
+        context: "resting",
+      },
+      entries,
+    );
+    // The summer walking video is excluded; biome scenery wins instead
+    assert.equal(hit?.id, "biome-still");
+  });
+
+  it("serves the resting night scene after dark", () => {
+    const hit = resolveSceneMedia(
+      {
+        biome: "new_england_town",
+        season: "summer",
+        timeOfDay: "night",
+        context: "resting",
+      },
+      entries,
+    );
+    assert.equal(hit?.id, "campsite-night");
+  });
+
+  it("landmark entries win at the landmark and never leak elsewhere", () => {
+    const atLandmark = resolveSceneMedia(
       {
         biome: "midwest_industrial",
         season: "fall",
         timeOfDay: "golden_hour",
+        context: "walking",
         landmarkId: "derby-downs",
       },
       entries,
     );
-    assert.equal(hit?.id, "landmark-derby");
-  });
+    assert.equal(atLandmark?.id, "landmark-derby");
 
-  it("never serves a landmark entry away from its landmark", () => {
-    const hit = resolveSceneMedia(
-      { biome: "midwest_industrial", season: "fall", timeOfDay: "day" },
+    const elsewhere = resolveSceneMedia(
+      {
+        biome: "midwest_industrial",
+        season: "fall",
+        timeOfDay: "day",
+        context: "walking",
+      },
       entries,
     );
-    assert.equal(hit?.id, "generic");
+    assert.equal(elsewhere?.id, "generic");
+  });
+
+  it("rotates among equally specific variants on the time bucket", () => {
+    const variants = [
+      entry({ id: "var-a", biome: "great_plains", context: "walking" }),
+      entry({ id: "var-b", biome: "great_plains", context: "walking" }),
+    ];
+    const query = {
+      biome: "great_plains" as const,
+      season: "summer" as const,
+      timeOfDay: "day" as const,
+      context: "walking" as const,
+    };
+    const first = resolveSceneMedia(query, variants, 0);
+    const second = resolveSceneMedia(query, variants, 5 * 60 * 1000);
+    const third = resolveSceneMedia(query, variants, 10 * 60 * 1000);
+    assert.equal(first?.id, "var-a");
+    assert.equal(second?.id, "var-b");
+    assert.equal(third?.id, "var-a");
   });
 
   it("returns null when nothing matches", () => {
     const hit = resolveSceneMedia(
-      { biome: "pacific_coast", season: "summer", timeOfDay: "day" },
+      {
+        biome: "pacific_coast",
+        season: "summer",
+        timeOfDay: "day",
+        context: "walking",
+      },
       [entries[3]],
     );
     assert.equal(hit, null);

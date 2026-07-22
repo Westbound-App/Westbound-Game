@@ -8,10 +8,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { LiveGamePayload } from "@/lib/game/load-live-state";
-import { resolveAtmosphere, type SeasonId } from "@/lib/atmosphere/season";
-import { dayNumber, resolveLocationPresentation } from "@/lib/game/location-label";
+import type { SeasonId } from "@/lib/atmosphere/season";
 import type { SceneBiome } from "@/lib/places/types";
-import { timeOfDayFromHour, type TimeOfDayId } from "@/lib/scene/presets";
+import type { TimeOfDayId } from "@/lib/scene/presets";
 import {
   makeParamReader,
   readReducedMotion,
@@ -20,13 +19,13 @@ import {
   staticSubscribe,
   subscribeReducedMotion,
 } from "@/lib/client/prefs";
+import { deriveSceneView } from "@/lib/media/scene-view";
 import {
-  resolveSceneMedia,
-  SCENE_MEDIA,
-  type SceneMediaEntry,
-} from "@/lib/media/manifest";
+  MediaLayer,
+  SCENE_STYLE,
+  useSceneLayers,
+} from "@/components/watch/MediaLayer";
 
-const METERS_PER_MILE = 1609.344;
 const TOD_VALUES: TimeOfDayId[] = ["day", "golden_hour", "dusk", "night"];
 const SEASON_VALUES: SeasonId[] = ["spring", "summer", "fall", "winter"];
 const BIOME_VALUES: SceneBiome[] = [
@@ -43,67 +42,6 @@ const readTod = makeParamReader("tod");
 const readBiome = makeParamReader("biome");
 const readSeason = makeParamReader("season");
 
-function statusLabel(status: string): string {
-  switch (status) {
-    case "walking":
-      return "Walking west";
-    case "approaching_decision":
-      return "Coming up on a choice";
-    case "decision_window_open":
-      return "The crowd is deciding";
-    case "resting":
-      return "Resting";
-    case "weather_rest":
-      return "Waiting out the weather";
-    case "completed":
-      return "Journey complete";
-    default:
-      return status.replaceAll("_", " ");
-  }
-}
-
-/** One full-bleed media layer: video loop, or still with slow Ken Burns.
- *  Fades in via CSS on mount, covering the previous layer beneath it.
- *  A video that cannot load or decode falls back to the best still. */
-function MediaLayer({
-  entry,
-  fallbackImageUrl,
-  reduceMotion,
-}: {
-  entry: SceneMediaEntry;
-  fallbackImageUrl: string | null;
-  reduceMotion: boolean;
-}) {
-  const [videoFailed, setVideoFailed] = useState(false);
-  const motionClass = reduceMotion ? "" : "wb-kenburns";
-  const showVideo = entry.kind === "video" && !videoFailed;
-  const imageUrl =
-    entry.kind === "image" ? entry.url : (fallbackImageUrl ?? entry.url);
-
-  return (
-    <div className={`absolute inset-0 ${reduceMotion ? "" : "wb-fadein"}`}>
-      {showVideo ? (
-        <video
-          className="h-full w-full object-cover"
-          src={entry.url}
-          autoPlay
-          muted
-          loop
-          playsInline
-          onError={() => setVideoFailed(true)}
-        />
-      ) : (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          className={`h-full w-full object-cover ${motionClass}`}
-          src={imageUrl}
-          alt=""
-        />
-      )}
-    </div>
-  );
-}
-
 /**
  * /watch — slow-TV photoreal presentation. Resolves scene media from the
  * walker's authoritative state; media upgrades from placeholders to
@@ -114,9 +52,6 @@ export function WatchClient() {
   const [live, setLive] = useState<LiveGamePayload | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [clockTick, setClockTick] = useState(0);
-  const [layers, setLayers] = useState<
-    Array<{ entry: SceneMediaEntry; fading: boolean }>
-  >([]);
 
   const reduceMotion = useSyncExternalStore(
     subscribeReducedMotion,
@@ -145,6 +80,7 @@ export function WatchClient() {
   useEffect(() => {
     const kickoff = setTimeout(() => void fetchLive(), 0);
     const poll = setInterval(() => void fetchLive(), 5000);
+    // Re-derive time-of-day + scene rotation every few minutes
     const clock = setInterval(() => setClockTick((n) => n + 1), 5 * 60 * 1000);
     return () => {
       clearTimeout(kickoff);
@@ -155,94 +91,29 @@ export function WatchClient() {
 
   const view = useMemo(() => {
     if (!live) return null;
-    const coord = {
-      latitude: live.walker.latitude,
-      longitude: live.walker.longitude,
-    };
-    const place = resolveLocationPresentation(coord);
-    const atmosphere = resolveAtmosphere(coord.latitude);
-    const now = new Date();
-    const hour = now.getHours() + now.getMinutes() / 60;
-
-    const biome =
-      biomeParam && BIOME_VALUES.includes(biomeParam as SceneBiome)
-        ? (biomeParam as SceneBiome)
-        : place.biome;
-    const season =
-      seasonParam && SEASON_VALUES.includes(seasonParam as SeasonId)
-        ? (seasonParam as SeasonId)
-        : atmosphere.season;
-    const timeOfDay =
-      todParam && TOD_VALUES.includes(todParam as TimeOfDayId)
-        ? (todParam as TimeOfDayId)
-        : timeOfDayFromHour(hour);
-
-    const mediaQuery = {
-      biome,
-      season,
-      timeOfDay,
-      landmarkId: place.landmark?.id ?? null,
-    };
-    return {
-      media: resolveSceneMedia(mediaQuery),
-      fallbackImage: resolveSceneMedia(
-        mediaQuery,
-        SCENE_MEDIA.filter((e) => e.kind === "image"),
-      ),
-      locationLine: place.locationLine,
-      moodLine: atmosphere.moodLine,
-      status: statusLabel(live.walker.status),
-      day: dayNumber(live.game.startedAt),
-      milesWalked: live.walker.totalDistanceWalkedMeters / METERS_PER_MILE,
-      milesRemaining: live.walker.projectedRemainingMeters / METERS_PER_MILE,
-      progress:
-        live.walker.totalDistanceWalkedMeters /
-        Math.max(
-          1,
-          live.walker.totalDistanceWalkedMeters +
-            live.walker.projectedRemainingMeters,
-        ),
-      dogName: live.game.companionDog?.name ?? "Beacon",
-    };
-    // clockTick re-derives time-of-day on a timer
+    return deriveSceneView(live, new Date(), {
+      timeOfDay:
+        todParam && TOD_VALUES.includes(todParam as TimeOfDayId)
+          ? (todParam as TimeOfDayId)
+          : null,
+      biome:
+        biomeParam && BIOME_VALUES.includes(biomeParam as SceneBiome)
+          ? (biomeParam as SceneBiome)
+          : null,
+      season:
+        seasonParam && SEASON_VALUES.includes(seasonParam as SeasonId)
+          ? (seasonParam as SeasonId)
+          : null,
+    });
+    // clockTick re-derives time-of-day + rotation on a timer
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, todParam, biomeParam, seasonParam, clockTick]);
 
-  // Crossfade: adjust layers during render when the resolved entry changes
-  // (the new layer fades in over the old via CSS), then prune covered layers.
-  const nextMedia = view?.media ?? null;
-  const topLayer = layers.length ? layers[layers.length - 1] : null;
-  if (nextMedia && (!topLayer || topLayer.entry.id !== nextMedia.id)) {
-    setLayers([
-      ...layers.slice(-1).map((l) => ({ ...l, fading: true })),
-      { entry: nextMedia, fading: false },
-    ]);
-  }
-
-  useEffect(() => {
-    if (!layers.some((l) => l.fading)) return;
-    const prune = setTimeout(() => {
-      setLayers((prev) => prev.filter((l) => !l.fading));
-    }, 1900);
-    return () => clearTimeout(prune);
-  }, [layers]);
-
-  const placeholderLabel = view?.media?.label ?? null;
+  const layers = useSceneLayers(view?.media ?? null);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-black">
-      <style>{`
-        @keyframes wb-kb {
-          from { transform: scale(1.03) translate(0.5%, 0.3%); }
-          to { transform: scale(1.11) translate(-1.2%, -0.8%); }
-        }
-        .wb-kenburns { animation: wb-kb 55s ease-in-out infinite alternate; }
-        @keyframes wb-fade {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        .wb-fadein { animation: wb-fade 1.6s ease forwards; }
-      `}</style>
+      <style>{SCENE_STYLE}</style>
 
       {layers.map((layer) => (
         <MediaLayer
@@ -250,6 +121,7 @@ export function WatchClient() {
           entry={layer.entry}
           fallbackImageUrl={view?.fallbackImage?.url ?? null}
           reduceMotion={reduceMotion}
+          grade={view?.grade ?? "none"}
         />
       ))}
 
@@ -297,7 +169,7 @@ export function WatchClient() {
               </p>
               <p className="text-xs text-white/75 sm:text-sm">
                 {view.milesWalked.toFixed(1)} mi walked ·{" "}
-                {Math.max(0, view.milesRemaining).toFixed(1)} to the Pacific
+                {view.milesRemaining.toFixed(1)} to the Pacific
               </p>
             </div>
             <div className="h-1 w-full overflow-hidden rounded-full bg-white/15">
@@ -317,9 +189,9 @@ export function WatchClient() {
         </div>
       ) : null}
 
-      {placeholderLabel ? (
+      {view?.media?.label ? (
         <div className="absolute bottom-1.5 right-2 text-[10px] tracking-wide text-white/35">
-          {placeholderLabel}
+          {view.media.label}
         </div>
       ) : null}
     </div>

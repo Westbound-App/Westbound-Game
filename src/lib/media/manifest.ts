@@ -23,6 +23,12 @@ export type MediaSource =
   | "generated_locked"
   | "renderer_stream";
 
+/**
+ * What the walker is doing in the scene. Walking shots must never show
+ * while he rests (and vice versa); "any" fits both (e.g. pure scenery).
+ */
+export type SceneContext = "walking" | "resting" | "any";
+
 export type SceneMediaEntry = {
   id: string;
   kind: MediaKind;
@@ -30,6 +36,7 @@ export type SceneMediaEntry = {
   biome: SceneBiome | "any";
   season: SeasonId | "any";
   timeOfDay: TimeOfDayId | "any";
+  context: SceneContext;
   /** Pin to a specific landmark id from the places registry */
   landmarkId: string | null;
   source: MediaSource;
@@ -41,6 +48,7 @@ export type SceneMediaQuery = {
   biome: SceneBiome;
   season: SeasonId;
   timeOfDay: TimeOfDayId;
+  context: "walking" | "resting";
   landmarkId?: string | null;
 };
 
@@ -58,6 +66,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "new_england_town",
     season: "summer",
     timeOfDay: "any",
+    context: "walking",
     landmarkId: null,
     source: "generated_locked",
     label: null,
@@ -69,6 +78,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "new_england_town",
     season: "fall",
     timeOfDay: "any",
+    context: "walking",
     landmarkId: null,
     source: "generated_locked",
     label: null,
@@ -80,6 +90,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "new_england_town",
     season: "winter",
     timeOfDay: "any",
+    context: "walking",
     landmarkId: null,
     source: "generated_locked",
     label: null,
@@ -91,6 +102,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "new_england_town",
     season: "spring",
     timeOfDay: "any",
+    context: "walking",
     landmarkId: null,
     source: "generated_locked",
     label: null,
@@ -102,6 +114,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "northeast_city",
     season: "any",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -113,6 +126,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "midwest_industrial",
     season: "any",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -124,6 +138,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "great_plains",
     season: "any",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -135,6 +150,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "southwest_canyon",
     season: "any",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -146,6 +162,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "pacific_coast",
     season: "any",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -157,6 +174,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "generic_highway",
     season: "any",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -169,6 +187,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "any",
     season: "fall",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -180,6 +199,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "any",
     season: "winter",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -191,6 +211,7 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "any",
     season: "spring",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
@@ -202,28 +223,36 @@ export const SCENE_MEDIA: SceneMediaEntry[] = [
     biome: "any",
     season: "summer",
     timeOfDay: "any",
+    context: "any",
     landmarkId: null,
     source: "stock_placeholder",
     label: "temporary placeholder scene",
   },
 ];
 
+/** Tied top-score entries rotate on this interval so long sessions vary. */
+const ROTATION_MS = 5 * 60 * 1000;
+
 /**
  * Pick the most specific entry for the walker's current state.
- * Specificity: landmark > biome > season > timeOfDay; among equals, video
- * beats still (motion reads as more alive). Deterministic on ties.
+ * Hard rules: landmark entries only at their landmark; walking shots never
+ * serve a resting query (and vice versa). Specificity: landmark > biome >
+ * context > season > timeOfDay; video beats still at equal specificity.
+ * Entries tied on score rotate deterministically on a time bucket.
  */
 export function resolveSceneMedia(
   query: SceneMediaQuery,
   manifest: SceneMediaEntry[] = SCENE_MEDIA,
+  nowMs = 0,
 ): SceneMediaEntry | null {
-  let best: SceneMediaEntry | null = null;
+  let best: SceneMediaEntry[] = [];
   let bestScore = -1;
 
   for (const entry of manifest) {
     if (entry.landmarkId && entry.landmarkId !== (query.landmarkId ?? null)) {
       continue;
     }
+    if (entry.context !== "any" && entry.context !== query.context) continue;
     if (entry.biome !== "any" && entry.biome !== query.biome) continue;
     if (entry.season !== "any" && entry.season !== query.season) continue;
     if (entry.timeOfDay !== "any" && entry.timeOfDay !== query.timeOfDay) {
@@ -231,17 +260,21 @@ export function resolveSceneMedia(
     }
 
     let score = 0;
-    if (entry.landmarkId) score += 8;
-    if (entry.biome !== "any") score += 4;
+    if (entry.landmarkId) score += 16;
+    if (entry.biome !== "any") score += 8;
+    if (entry.context !== "any") score += 4;
     if (entry.season !== "any") score += 2;
     if (entry.timeOfDay !== "any") score += 1;
     if (entry.kind === "video") score += 0.5;
 
     if (score > bestScore) {
       bestScore = score;
-      best = entry;
+      best = [entry];
+    } else if (score === bestScore) {
+      best.push(entry);
     }
   }
 
-  return best;
+  if (best.length === 0) return null;
+  return best[Math.floor(Math.max(0, nowMs) / ROTATION_MS) % best.length];
 }
