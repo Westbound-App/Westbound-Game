@@ -42,8 +42,11 @@ export function AdminPanel({ initial }: Props) {
     const id = window.setInterval(() => {
       void refresh();
     }, 3000);
-    void refresh();
-    return () => window.clearInterval(id);
+    const kickoff = window.setTimeout(() => void refresh(), 0);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(kickoff);
+    };
   }, [refresh]);
 
   async function forceTick() {

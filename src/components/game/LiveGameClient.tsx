@@ -42,7 +42,8 @@ export function LiveGameClient({ initial, pollIntervalMs = 1500 }: Props) {
   const [lastFetchError, setLastFetchError] = useState<string | null>(null);
 
   useEffect(() => {
-    setPlayerId(getOrCreatePlayerId());
+    const kickoff = setTimeout(() => setPlayerId(getOrCreatePlayerId()), 0);
+    return () => clearTimeout(kickoff);
   }, []);
 
   const fetchLive = useCallback(async () => {

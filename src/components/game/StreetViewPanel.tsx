@@ -36,9 +36,9 @@ export function StreetViewPanel({ latitude, longitude, heading }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    setIframeFailed(false);
     const t = window.setTimeout(() => {
       void (async () => {
+        setIframeFailed(false);
         setLoading(true);
         try {
           const q = new URLSearchParams({

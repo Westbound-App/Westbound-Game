@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -25,6 +26,7 @@ import {
   SCENE_STYLE,
   useSceneLayers,
 } from "@/components/watch/MediaLayer";
+import { DecisionPanel } from "@/components/watch/DecisionPanel";
 
 const TOD_VALUES: TimeOfDayId[] = ["day", "golden_hour", "dusk", "night"];
 const SEASON_VALUES: SeasonId[] = ["spring", "summer", "fall", "winter"];
@@ -41,6 +43,27 @@ const BIOME_VALUES: SceneBiome[] = [
 const readTod = makeParamReader("tod");
 const readBiome = makeParamReader("biome");
 const readSeason = makeParamReader("season");
+
+/** Stable anonymous player identity, shared with the classic page. */
+let cachedPlayerId: string | null = null;
+function readPlayerId(): string | null {
+  if (cachedPlayerId) return cachedPlayerId;
+  try {
+    let id = localStorage.getItem("westbound_player_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("westbound_player_id", id);
+    }
+    cachedPlayerId = id;
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+function newIdempotencyKey(...parts: string[]): string {
+  return `${parts.join("-")}-${Date.now()}`;
+}
 
 /**
  * /watch — slow-TV photoreal presentation. Resolves scene media from the
@@ -61,10 +84,13 @@ export function WatchClient() {
   const todParam = useSyncExternalStore(staticSubscribe, readTod, serverNull);
   const biomeParam = useSyncExternalStore(staticSubscribe, readBiome, serverNull);
   const seasonParam = useSyncExternalStore(staticSubscribe, readSeason, serverNull);
+  const playerId = useSyncExternalStore(staticSubscribe, readPlayerId, serverNull);
+  const joined = useRef(false);
 
   const fetchLive = useCallback(async () => {
     try {
-      const res = await fetch("/api/game/live", { cache: "no-store" });
+      const q = playerId ? `?playerId=${encodeURIComponent(playerId)}` : "";
+      const res = await fetch(`/api/game/live${q}`, { cache: "no-store" });
       if (!res.ok) {
         setReconnecting(true);
         return;
@@ -75,10 +101,25 @@ export function WatchClient() {
     } catch {
       setReconnecting(true);
     }
-  }, []);
+  }, [playerId]);
 
   useEffect(() => {
-    const kickoff = setTimeout(() => void fetchLive(), 0);
+    const kickoff = setTimeout(async () => {
+      // Register the anonymous player once so a wallet exists for votes
+      if (playerId && !joined.current) {
+        joined.current = true;
+        try {
+          await fetch("/api/player/join", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playerId }),
+          });
+        } catch {
+          // Watching works without a wallet; contributing will surface errors
+        }
+      }
+      void fetchLive();
+    }, 0);
     const poll = setInterval(() => void fetchLive(), 5000);
     // Re-derive time-of-day + scene rotation every few minutes
     const clock = setInterval(() => setClockTick((n) => n + 1), 5 * 60 * 1000);
@@ -87,7 +128,33 @@ export function WatchClient() {
       clearInterval(poll);
       clearInterval(clock);
     };
-  }, [fetchLive]);
+  }, [fetchLive, playerId]);
+
+  const windowId = live?.controlWindow?.id ?? null;
+  const contribute = useCallback(
+    async (optionId: string, credits: number): Promise<string | null> => {
+      if (!playerId || !windowId) return "No player session yet — try again";
+      try {
+        const res = await fetch(`/api/control-windows/${windowId}/contributions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerId,
+            optionId,
+            credits,
+            idempotencyKey: newIdempotencyKey(playerId, windowId, optionId),
+          }),
+        });
+        const data = (await res.json()) as { ok: boolean; error?: string };
+        if (!data.ok) return data.error ?? "Contribution failed";
+        void fetchLive();
+        return null;
+      } catch {
+        return "Network error — contribution not sent";
+      }
+    },
+    [playerId, windowId, fetchLive],
+  );
 
   const view = useMemo(() => {
     if (!live) return null;
@@ -182,6 +249,12 @@ export function WatchClient() {
           </div>
         </div>
       ) : null}
+
+      <DecisionPanel
+        window={live?.controlWindow ?? null}
+        player={live?.player ?? null}
+        onContribute={contribute}
+      />
 
       {reconnecting ? (
         <div className="absolute right-4 top-16 rounded-full bg-black/60 px-3 py-1 text-[11px] text-amber-200">
