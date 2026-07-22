@@ -12,6 +12,7 @@ import {
   resolveEffectiveSpeedMps,
 } from "@/lib/config/game-config";
 import { buildDecisionPoints } from "@/lib/game/control-window-factory";
+import { emptyDailyLog, type DailyLog } from "@/lib/game/daily";
 import {
   getFallbackEvents,
   getFallbackGameView,
@@ -57,6 +58,8 @@ export type LocalGameState = {
   /** Wall-clock ISO until which a paid rest holds the walk, if any */
   paidRestUntil: string | null;
   directActions: DirectActionRecord[];
+  /** Canonical per-schedule-day distance log */
+  daily: DailyLog;
   players: Record<string, LocalPlayer>;
   ledger: WalletLedgerEntry[];
   factionStats: {
@@ -70,7 +73,7 @@ export type LocalGameState = {
   };
 };
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /**
  * Storage resolution: prefer the project .data dir (dev), fall back to the
@@ -190,6 +193,7 @@ function createInitialState(now = new Date()): LocalGameState {
     interventions: [],
     paidRestUntil: null,
     directActions: [],
+    daily: emptyDailyLog(),
     players: {},
     ledger: [],
     factionStats: {
@@ -232,6 +236,7 @@ function migrateState(raw: LocalGameState): LocalGameState {
     interventions: raw.interventions ?? [],
     paidRestUntil: raw.paidRestUntil ?? null,
     directActions: raw.directActions ?? [],
+    daily: raw.daily ?? emptyDailyLog(),
     players: raw.players ?? {},
     ledger: raw.ledger ?? [],
     factionStats: raw.factionStats ?? base.factionStats,
