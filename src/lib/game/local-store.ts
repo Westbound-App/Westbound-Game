@@ -23,6 +23,7 @@ import type {
   ContributionRecord,
   ControlWindowState,
   DecisionPointPlan,
+  DirectActionRecord,
   FactionTotals,
   InterventionRecord,
   LocalPlayer,
@@ -53,6 +54,9 @@ export type LocalGameState = {
   resolvedWindows: ControlWindowState[];
   contributions: ContributionRecord[];
   interventions: InterventionRecord[];
+  /** Wall-clock ISO until which a paid rest holds the walk, if any */
+  paidRestUntil: string | null;
+  directActions: DirectActionRecord[];
   players: Record<string, LocalPlayer>;
   ledger: WalletLedgerEntry[];
   factionStats: {
@@ -66,7 +70,7 @@ export type LocalGameState = {
   };
 };
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * Storage resolution: prefer the project .data dir (dev), fall back to the
@@ -184,6 +188,8 @@ function createInitialState(now = new Date()): LocalGameState {
     resolvedWindows: [],
     contributions: [],
     interventions: [],
+    paidRestUntil: null,
+    directActions: [],
     players: {},
     ledger: [],
     factionStats: {
@@ -224,6 +230,8 @@ function migrateState(raw: LocalGameState): LocalGameState {
     resolvedWindows: raw.resolvedWindows ?? [],
     contributions: raw.contributions ?? [],
     interventions: raw.interventions ?? [],
+    paidRestUntil: raw.paidRestUntil ?? null,
+    directActions: raw.directActions ?? [],
     players: raw.players ?? {},
     ledger: raw.ledger ?? [],
     factionStats: raw.factionStats ?? base.factionStats,

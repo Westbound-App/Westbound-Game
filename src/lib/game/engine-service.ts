@@ -11,8 +11,11 @@ import {
 import { createControlWindow } from "@/lib/game/control-window-factory";
 import {
   applyWinningRoute,
+  rebuildThroughWaypoint,
   remainingCoordinatesFromProgress,
 } from "@/lib/game/detour";
+import { restResumeAnchorMs } from "@/lib/game/schedule";
+import { haversineMeters } from "@/lib/routing/mock-provider";
 import {
   ensureLocalState,
   resetLocalSandbox,
@@ -326,6 +329,46 @@ export async function runLocalTick(nowMs: number = Date.now()): Promise<{
   // Resolve expired windows before movement
   if (state.activeControlWindow?.status === "open") {
     finalizeResolution(state, nowMs);
+  }
+
+  // Paid rest is the ONLY way the walk pauses. While it holds: no movement,
+  // and the anchor rides forward so rest time never counts as walking time.
+  const restUntilMs = state.paidRestUntil ? Date.parse(state.paidRestUntil) : null;
+  if (restUntilMs && nowMs < restUntilMs) {
+    if (state.walker.status !== "resting") {
+      state.walker.status = "resting";
+      state.walker.versionNumber += 1;
+    }
+    state.walker.currentSpeedMps = 0;
+    state.walker.movementStartedAt = nowIso;
+    state.worker = {
+      lastTickAt: nowIso,
+      tickCount: state.worker.tickCount + 1,
+      lastError: null,
+    };
+    await saveLocalState(state);
+    return { state, metersAdvanced: 0 };
+  }
+  if (restUntilMs && nowMs >= restUntilMs) {
+    state.paidRestUntil = null;
+    if (state.walker.status === "resting") {
+      state.walker.status = "walking";
+      const prevAnchor = state.walker.movementStartedAt
+        ? Date.parse(state.walker.movementStartedAt)
+        : nowMs;
+      state.walker.movementStartedAt = new Date(
+        restResumeAnchorMs(prevAnchor, nowMs, restUntilMs),
+      ).toISOString();
+      state.walker.versionNumber += 1;
+      pushEvent(state, {
+        eventType: "rest_over",
+        title: "Back on the road",
+        description: "Break's over — westbound again.",
+        latitude: state.walker.latitude,
+        longitude: state.walker.longitude,
+        occurredAt: nowIso,
+      });
+    }
   }
 
   const result = tickWalker({
@@ -671,4 +714,194 @@ export async function forceOpenControlWindow(): Promise<ControlPublicView | null
   maybeOpenControlWindow(state, config, Date.now());
   await saveLocalState(state);
   return controlPublicView(state, Date.now());
+}
+
+/** Result envelope shared by paid direct actions. */
+type PaidActionFailure = { ok: false; error: string };
+
+function paidActionGuards(
+  state: LocalGameState,
+  playerId: string,
+): PaidActionFailure | { ok: true; player: LocalPlayer } {
+  if (state.game.status === "completed" || state.game.completionLocked) {
+    return { ok: false, error: "The journey is complete — it cannot change." };
+  }
+  const player = state.players[playerId];
+  if (!player) {
+    return { ok: false, error: "No player found — join from the live page first." };
+  }
+  return { ok: true, player };
+}
+
+/**
+ * Paid rest: he never stops walking on his own — supporters buy him and
+ * Beacon a break. Stacks: a second purchase extends the current rest.
+ */
+export async function purchaseRestBreak(params: {
+  playerId: string;
+  idempotencyKey: string;
+}): Promise<
+  | { ok: true; restUntil: string; balance: number }
+  | PaidActionFailure
+> {
+  const state = await ensureLocalState();
+  const guard = paidActionGuards(state, params.playerId);
+  if (!guard.ok) return guard;
+
+  const config = mergeGameConfig(state.game.config);
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const keys = new Set(state.ledger.map((l) => l.idempotencyKey));
+  const debit = debitCredits({
+    player: guard.player,
+    amount: config.paidActions.restBreakCredits,
+    idempotencyKey: params.idempotencyKey,
+    existingKeys: keys,
+    nowIso,
+    metadata: { action: "rest_break" },
+  });
+  if (!debit.ok) return { ok: false, error: debit.error };
+  state.ledger.push(debit.entry);
+  state.players[guard.player.id] = debit.player;
+
+  const baseMs = state.paidRestUntil
+    ? Math.max(nowMs, Date.parse(state.paidRestUntil))
+    : nowMs;
+  const restUntil = new Date(
+    baseMs + config.paidActions.restBreakRealMinutes * 60_000,
+  ).toISOString();
+  state.paidRestUntil = restUntil;
+  state.directActions.unshift({
+    id: `act-rest-${nowMs}`,
+    type: "rest_break",
+    playerId: guard.player.id,
+    credits: config.paidActions.restBreakCredits,
+    label: `${config.paidActions.restBreakRealMinutes}-minute rest`,
+    waypoint: null,
+    createdAt: nowIso,
+  });
+  pushEvent(state, {
+    eventType: "paid_rest",
+    title: "A kind supporter bought them a rest",
+    description: `${guard.player.displayName} gave ${config.walkerName} and ${config.companionDog.name} a ${config.paidActions.restBreakRealMinutes}-minute break.`,
+    latitude: state.walker.latitude,
+    longitude: state.walker.longitude,
+    occurredAt: nowIso,
+  });
+  await saveLocalState(state);
+  return { ok: true, restUntil, balance: debit.player.availableBalance };
+}
+
+/**
+ * Paid waypoint send: walk to any chosen point (within the configured
+ * range), then the route recalculates onward to the final destination.
+ */
+export async function purchaseWaypointSend(params: {
+  playerId: string;
+  latitude: number;
+  longitude: number;
+  label?: string;
+  idempotencyKey: string;
+}): Promise<
+  | {
+      ok: true;
+      addedMiles: number;
+      remainingMiles: number;
+      balance: number;
+    }
+  | PaidActionFailure
+> {
+  const state = await ensureLocalState();
+  const guard = paidActionGuards(state, params.playerId);
+  if (!guard.ok) return guard;
+  if (state.activeControlWindow?.status === "open") {
+    return {
+      ok: false,
+      error: "A route vote is in progress — try again after it closes.",
+    };
+  }
+
+  const config = mergeGameConfig(state.game.config);
+  const current = {
+    latitude: state.walker.latitude,
+    longitude: state.walker.longitude,
+  };
+  const waypoint = { latitude: params.latitude, longitude: params.longitude };
+  const legMiles = haversineMeters(current, waypoint) / 1609.344;
+  if (legMiles < 0.02) {
+    return { ok: false, error: "They are already there — pick somewhere farther." };
+  }
+  if (legMiles > config.paidActions.waypointMaxDetourMiles) {
+    return {
+      ok: false,
+      error: `That's ${Math.round(legMiles)} miles away — the limit is ${config.paidActions.waypointMaxDetourMiles}.`,
+    };
+  }
+
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const keys = new Set(state.ledger.map((l) => l.idempotencyKey));
+  const debit = debitCredits({
+    player: guard.player,
+    amount: config.paidActions.waypointCredits,
+    idempotencyKey: params.idempotencyKey,
+    existingKeys: keys,
+    nowIso,
+    metadata: { action: "waypoint_send", label: params.label ?? null },
+  });
+  if (!debit.ok) return { ok: false, error: debit.error };
+  state.ledger.push(debit.entry);
+  state.players[guard.player.id] = debit.player;
+
+  const previousRemainingMeters = state.walker.projectedRemainingMeters;
+  const routeVersionId = `rv-wp-${nowMs}`;
+  const { segments, totalDistanceMeters } = rebuildThroughWaypoint({
+    current,
+    waypoint,
+    destination: state.game.destination,
+    routeVersionId,
+  });
+
+  state.segments = segments;
+  state.walker.segmentIndex = 0;
+  state.walker.distanceIntoSegmentMeters = 0;
+  state.walker.projectedRemainingMeters = totalDistanceMeters;
+  // The tick derives remaining from total route length minus miles walked —
+  // the rebuilt route's length is what's ahead plus what's already behind.
+  state.walker.originalRouteDistanceMeters =
+    state.walker.totalDistanceWalkedMeters + totalDistanceMeters;
+  state.walker.movementStartedAt = nowIso;
+  state.walker.versionNumber += 1;
+
+  const label =
+    params.label?.trim() ||
+    `${waypoint.latitude.toFixed(3)}, ${waypoint.longitude.toFixed(3)}`;
+  const addedMiles = Math.max(
+    0,
+    (totalDistanceMeters - previousRemainingMeters) / 1609.344,
+  );
+  state.directActions.unshift({
+    id: `act-wp-${nowMs}`,
+    type: "waypoint_send",
+    playerId: guard.player.id,
+    credits: config.paidActions.waypointCredits,
+    label,
+    waypoint,
+    createdAt: nowIso,
+  });
+  pushEvent(state, {
+    eventType: "waypoint_send",
+    title: "Detour purchased",
+    description: `${guard.player.displayName} is sending them to ${label} — about ${addedMiles.toFixed(1)} extra miles before the Pacific. Route recalculated.`,
+    latitude: current.latitude,
+    longitude: current.longitude,
+    occurredAt: nowIso,
+  });
+  await saveLocalState(state);
+  return {
+    ok: true,
+    addedMiles,
+    remainingMiles: totalDistanceMeters / 1609.344,
+    balance: debit.player.availableBalance,
+  };
 }

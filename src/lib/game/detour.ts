@@ -46,6 +46,36 @@ function offsetCoordinate(
 }
 
 /**
+ * Route a paid waypoint send: current position → waypoint → final
+ * destination. Mock geometry (straight legs); a real pedestrian routing
+ * provider slots in behind the same shape later.
+ */
+export function rebuildThroughWaypoint(params: {
+  current: Coordinate;
+  waypoint: Coordinate;
+  destination: Coordinate;
+  routeVersionId: string;
+}): { segments: RouteSegment[]; totalDistanceMeters: number } {
+  const raw = [params.current, params.waypoint, params.destination];
+  const coords: Coordinate[] = [];
+  for (const c of raw) {
+    const prev = coords[coords.length - 1];
+    if (
+      !prev ||
+      Math.abs(prev.latitude - c.latitude) > 1e-7 ||
+      Math.abs(prev.longitude - c.longitude) > 1e-7
+    ) {
+      coords.push(c);
+    }
+  }
+  const segments = buildSegments(coords, params.routeVersionId);
+  return {
+    segments,
+    totalDistanceMeters: segments.reduce((s, seg) => s + seg.distanceMeters, 0),
+  };
+}
+
+/**
  * Rebuild remaining path from hold point through optional waypoint to destination.
  */
 export function applyWinningRoute(params: {

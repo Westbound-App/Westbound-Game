@@ -109,6 +109,19 @@ export type DecisionPointPlan = {
   resolved: boolean;
 };
 
+/** Paid direct actions — rest gifts and waypoint sends outside vote windows */
+export type DirectActionType = "rest_break" | "waypoint_send";
+
+export type DirectActionRecord = {
+  id: string;
+  type: DirectActionType;
+  playerId: string;
+  credits: number;
+  label: string;
+  waypoint: Coordinate | null;
+  createdAt: string;
+};
+
 export type InterventionRecord = {
   id: string;
   controlWindowId: string;
