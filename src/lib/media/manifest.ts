@@ -235,10 +235,13 @@ const ROTATION_MS = 5 * 60 * 1000;
 
 /**
  * Pick the most specific entry for the walker's current state.
- * Hard rules: landmark entries only at their landmark; walking shots never
- * serve a resting query (and vice versa). Specificity: landmark > biome >
- * context > season > timeOfDay; video beats still at equal specificity.
- * Entries tied on score rotate deterministically on a time bucket.
+ *
+ * PRIORITY ORDER — character consistency comes first: a character-locked
+ * scene in the wrong context (his walking shot shown while resting) beats
+ * ANY placeholder with the wrong characters. Context is a soft preference
+ * (bonus for matching, penalty for clashing), never a reason to fall back
+ * to off-model media. Landmark pinning and biome/season/time matching stay
+ * hard filters. Ties rotate deterministically on a time bucket.
  */
 export function resolveSceneMedia(
   query: SceneMediaQuery,
@@ -246,13 +249,12 @@ export function resolveSceneMedia(
   nowMs = 0,
 ): SceneMediaEntry | null {
   let best: SceneMediaEntry[] = [];
-  let bestScore = -1;
+  let bestScore = Number.NEGATIVE_INFINITY;
 
   for (const entry of manifest) {
     if (entry.landmarkId && entry.landmarkId !== (query.landmarkId ?? null)) {
       continue;
     }
-    if (entry.context !== "any" && entry.context !== query.context) continue;
     if (entry.biome !== "any" && entry.biome !== query.biome) continue;
     if (entry.season !== "any" && entry.season !== query.season) continue;
     if (entry.timeOfDay !== "any" && entry.timeOfDay !== query.timeOfDay) {
@@ -262,7 +264,11 @@ export function resolveSceneMedia(
     let score = 0;
     if (entry.landmarkId) score += 16;
     if (entry.biome !== "any") score += 8;
-    if (entry.context !== "any") score += 4;
+    // The characters ARE the product — canon media dominates placeholders
+    if (entry.source === "generated_locked") score += 12;
+    if (entry.context !== "any") {
+      score += entry.context === query.context ? 4 : -6;
+    }
     if (entry.season !== "any") score += 2;
     if (entry.timeOfDay !== "any") score += 1;
     if (entry.kind === "video") score += 0.5;
