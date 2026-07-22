@@ -120,7 +120,31 @@ function Tile({
       : [palette.deciduous[1], palette.conifer[0]];
 
   const trees: React.ReactElement[] = [];
-  const treeCount = Math.round(palette.treeDensity * 5);
+  const treeCount = Math.round(palette.treeDensity * 6);
+  // Low understory brush hugging the road edge
+  for (let side = 0; side < 2; side += 1) {
+    const sign = side === 0 ? -1 : 1;
+    for (let i = 0; i < 2; i += 1) {
+      const k = 12 + side * 2 + i;
+      trees.push(
+        <mesh
+          key={`b${side}-${i}`}
+          position={[
+            sign * (6.4 + r[k] * 2.6),
+            0.32,
+            z0 - r[(k + 5) % 24] * TILE,
+          ]}
+          castShadow
+        >
+          <sphereGeometry args={[0.45 + r[(k + 9) % 24] * 0.45, 8, 7]} />
+          <meshStandardMaterial
+            color={r[(k + 3) % 24] < 0.5 ? palette.deciduous[0] : palette.conifer[1]}
+            roughness={1}
+          />
+        </mesh>,
+      );
+    }
+  }
   for (let side = 0; side < 2; side += 1) {
     const sign = side === 0 ? -1 : 1;
     for (let i = 0; i < treeCount; i += 1) {
@@ -227,6 +251,65 @@ function Tile({
   );
 }
 
+/** Mid-distance parallax band: slabs of forest sliding slower than the
+ *  roadside, selling depth between the near trees and the far hills. */
+function ParallaxBand({
+  offsetRef,
+  color,
+  factor,
+  x,
+  height,
+}: {
+  offsetRef: React.MutableRefObject<number>;
+  color: string;
+  factor: number;
+  x: number;
+  height: number;
+}) {
+  const group = useRef<Group>(null);
+  const [base, setBase] = useState(0);
+  const last = useRef(0);
+  const BAND_TILE = 70;
+
+  useFrame(() => {
+    const scaled = offsetRef.current * factor;
+    if (group.current) group.current.position.z = scaled;
+    const b = Math.floor(scaled / BAND_TILE);
+    if (b !== last.current) {
+      last.current = b;
+      setBase(b);
+    }
+  });
+
+  const indices: number[] = [];
+  for (let i = -1; i <= 4; i += 1) indices.push(base + i);
+
+  return (
+    <group ref={group}>
+      {indices.map((i) => {
+        const r = tileRandoms(i * 31 + Math.round(x), 4);
+        return (
+          <group key={i} position={[0, 0, -i * BAND_TILE]}>
+            {[-1, 1].map((sign) => (
+              <mesh
+                key={sign}
+                position={[
+                  sign * (x + r[0] * 12),
+                  (height + r[3] * 4) / 2,
+                  -BAND_TILE / 2,
+                ]}
+              >
+                <boxGeometry args={[24 + r[2] * 18, height + r[3] * 4, BAND_TILE + 8]} />
+                <meshStandardMaterial color={color} roughness={1} />
+              </mesh>
+            ))}
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
 /**
  * The moving world. The walker stays at the origin; this group slides toward
  * +Z as he advances. Tiles are keyed by ABSOLUTE index derived from total
@@ -281,6 +364,10 @@ export function Roadside({ offsetRef, tileOrigin, palette, windowGlow }: WorldPr
           <meshStandardMaterial color={palette.hills} roughness={1} />
         </mesh>
       ))}
+
+      {/* Depth: two forest bands sliding slower than the roadside */}
+      <ParallaxBand offsetRef={offsetRef} color={palette.treeline} factor={0.55} x={46} height={9} />
+      <ParallaxBand offsetRef={offsetRef} color={palette.hills} factor={0.3} x={72} height={15} />
 
       <group ref={world}>
         {indices.map((i) => (
