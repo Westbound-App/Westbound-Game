@@ -107,9 +107,10 @@ experience. Realistic quote for M1–M4: **$1,500–5,000** fixed-bid,
 2–6 weeks. Where to look: Upwork (search "Unreal Engine environment
 cinematic"), Fab community, r/unrealengine hiring threads.
 
-**DIY:** all of the above is achievable by a motivated beginner following
-UE tutorials with AI guidance, on the same hardware, in 4–10 weekends.
-Recommended only if the timeline pressure is low.
+**DIY (chosen path):** all of the above is achievable by a motivated
+beginner with Claude Code running locally inside the UE project doing the
+scriptable work. Start with `docs/UE_DAY_ONE.md` — it stages the build
+behind $0 → $30 → ~$350 approval gates.
 
 ## 8. Copy-paste job post
 
