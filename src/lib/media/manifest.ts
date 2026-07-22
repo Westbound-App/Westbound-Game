@@ -59,6 +59,43 @@ export type SceneMediaQuery = {
  */
 export const SCENE_MEDIA: SceneMediaEntry[] = [
   // Maine corridor — character-locked scenes generated from docs/references/
+  // Walking loops (video): equal specificity → they rotate every few minutes
+  {
+    id: "maine-walk-loop",
+    kind: "video",
+    url: "/media/scenes/packs/maine/walk-loop-01.mp4",
+    biome: "new_england_town",
+    season: "summer",
+    timeOfDay: "any",
+    context: "walking",
+    landmarkId: null,
+    source: "generated_locked",
+    label: null,
+  },
+  {
+    id: "maine-walk-connection",
+    kind: "video",
+    url: "/media/scenes/packs/maine/walk-connection-02.mp4",
+    biome: "new_england_town",
+    season: "summer",
+    timeOfDay: "any",
+    context: "walking",
+    landmarkId: null,
+    source: "generated_locked",
+    label: null,
+  },
+  {
+    id: "maine-walk-approach",
+    kind: "video",
+    url: "/media/scenes/packs/maine/walk-approach-03.mp4",
+    biome: "new_england_town",
+    season: "summer",
+    timeOfDay: "any",
+    context: "walking",
+    landmarkId: null,
+    source: "generated_locked",
+    label: null,
+  },
   {
     id: "maine-summer-day",
     kind: "image",
