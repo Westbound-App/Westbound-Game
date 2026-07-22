@@ -87,10 +87,11 @@ export const defaultGameConfig: GameConfig = {
       "Mostly black with white chest, paws, and muzzle; a little chunky like a Bernese, with a playful husky face. Walks with him and around him.",
   },
   normalWalkingSpeedMph: 2.5,
-  // He never stops walking — rest exists only as a paid act of kindness
-  walkingHoursPerDay: 24,
-  restingHoursPerDay: 0,
-  estimatedMilesPerDay: 60,
+  // Believable daily rhythm (LIVE_JOURNEY_VISION §7): long walking days
+  // with natural nightly rest. Paid rest breaks add extra pauses on top.
+  walkingHoursPerDay: 14,
+  restingHoursPerDay: 10,
+  estimatedMilesPerDay: 35,
   stateBroadcastIntervalSeconds: 5,
   decisionWindowDurationSeconds: 45,
   minimumDecisionSpacingMiles: 0.25,

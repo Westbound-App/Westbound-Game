@@ -1,5 +1,9 @@
 # WESTBOUND — Unreal Day One (self-build path)
 
+> **Status: deferred.** Per `docs/LIVE_JOURNEY_VISION.md` §5, phase one
+> ships on the web scene library without Unreal. Keep this guide for the
+> later renderer phase (or hobby exploration on the side).
+
 You are the hands and eyes; Claude Code on your PC is the builder. This
 guide takes you from nothing installed to **watching a photoreal character
 walk down a forest road on your own machine**, before any real money is

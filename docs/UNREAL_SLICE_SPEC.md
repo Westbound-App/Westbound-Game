@@ -1,5 +1,9 @@
 # WESTBOUND — Unreal Engine Vertical Slice Specification
 
+> **Status: deferred.** Per `docs/LIVE_JOURNEY_VISION.md` §5, the initial
+> product does not require Unreal Engine — phase one is the web scene
+> library. This spec is preserved as the later-phase renderer path.
+
 The renderer decision is made: WESTBOUND's live view is a **real 3D world**
 rendered in **Unreal Engine 5**, Red Dead / GTA-class presentation, driven
 by the authoritative game backend. This document specifies the first
